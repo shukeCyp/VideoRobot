@@ -303,7 +303,10 @@ class JimengImage2VideoExecutor(BaseTaskExecutor):
             # 点击时长选择下拉框（第二个非类型选择的下拉框）
             duration_selectors = await self.page.query_selector_all('div.lv-select[role="combobox"]:not([class*="type-select-"])')
             if len(duration_selectors) >= 2:
-                await duration_selectors[1].click()  # 第二个非类型选择的下拉框就是时长选择
+                if len(duration_selectors) > 2:
+                    await duration_selectors[2].click()  # 第二个非类型选择的下拉框就是时长选择
+                else:
+                    await duration_selectors[1].click()  # 第二个非类型选择的下拉框就是时长选择
                 await asyncio.sleep(1)
                 
                 # 等待时长选择弹窗出现
@@ -438,7 +441,20 @@ class JimengImage2VideoExecutor(BaseTaskExecutor):
         try:
             self.logger.info("等待生成按钮可用并点击")
             await self.page.wait_for_selector('button[class^="lv-btn lv-btn-primary"][class*="submit-button-"]:not(.lv-btn-disabled)', timeout=60000)
-            await self.page.click('button[class^="lv-btn lv-btn-primary"][class*="submit-button-"]:not(.lv-btn-disabled)')
+            
+            # 使用JavaScript强制点击生成按钮
+            self.logger.info("使用JavaScript强制点击生成按钮")
+            await self.page.evaluate('''
+                () => {
+                    const button = document.querySelector('button[class^="lv-btn lv-btn-primary"][class*="submit-button-"]:not(.lv-btn-disabled)');
+                    if (button) {
+                        button.click();
+                        return true;
+                    }
+                    return false;
+                }
+            ''')
+            
             self.logger.info("已点击生成按钮，开始生成视频")
             await asyncio.sleep(2)
             return TaskResult(code=ErrorCode.SUCCESS.value, data=None, message="开始生成")

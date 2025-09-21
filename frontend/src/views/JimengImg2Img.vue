@@ -466,7 +466,7 @@ export default {
         
         // 只有当显示比例选择框时才添加aspect_ratio参数
         if (shouldShowRatio.value && taskForm.aspect_ratio) {
-          formData.append('aspect_ratio', taskForm.aspect_ratio)
+        formData.append('aspect_ratio', taskForm.aspect_ratio)
         }
         
         // 添加图片文件

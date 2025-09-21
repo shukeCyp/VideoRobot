@@ -461,16 +461,16 @@ def batch_download_img2img_tasks():
                                 'url': image_url,
                                 'filename': filename
                             })
-
+                
                 if not file_infos:
                     print("没有找到可下载的图片")
                     return
-
+                
                 # 创建批量下载文件夹
                 timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
                 batch_folder = os.path.join(folder_path, f"jimeng_img2img_{timestamp}")
                 os.makedirs(batch_folder, exist_ok=True)
-
+                
                 # 下载文件
                 success_count = 0
                 for file_info in file_infos:
@@ -488,7 +488,7 @@ def batch_download_img2img_tasks():
                         print(f"下载文件: {file_info['filename']}")
                     except Exception as e:
                         print(f"下载文件失败: {file_info['filename']}, 错误: {e}")
-
+                
                 print(f"批量下载完成，成功下载 {success_count} 个文件到: {batch_folder}")
                 
             except Exception as e:

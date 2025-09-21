@@ -401,7 +401,20 @@ class JimengImg2ImgExecutor(BaseTaskExecutor):
         try:
             self.logger.info("等待生成按钮可用并点击")
             await self.page.wait_for_selector('button[class^="lv-btn lv-btn-primary"][class*="submit-button-"]:not(.lv-btn-disabled)', timeout=60000)
-            await self.page.click('button[class^="lv-btn lv-btn-primary"][class*="submit-button-"]:not(.lv-btn-disabled)')
+            
+            # 使用JavaScript强制点击生成按钮
+            self.logger.info("使用JavaScript强制点击生成按钮")
+            await self.page.evaluate('''
+                () => {
+                    const button = document.querySelector('button[class^="lv-btn lv-btn-primary"][class*="submit-button-"]:not(.lv-btn-disabled)');
+                    if (button) {
+                        button.click();
+                        return true;
+                    }
+                    return false;
+                }
+            ''')
+            
             self.logger.info("已点击生成按钮，开始生成图片")
             await asyncio.sleep(2)
             return TaskResult(code=ErrorCode.SUCCESS.value, data=None, message="开始生成")

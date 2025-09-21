@@ -190,7 +190,7 @@ class JimengImg2ImgExecutor(BaseTaskExecutor):
         """跳转到AI工具生成页面"""
         try:
             self.logger.info("正在跳转到AI工具生成页面")
-            await self.page.goto('https://dreamina.capcut.com/ai-tool/generate')
+            await self.page.goto('https://dreamina.capcut.com/ai-tool/generate?type=image')
             await self.page.wait_for_load_state('networkidle', timeout=60000)
             await asyncio.sleep(2)
             self.logger.info("已跳转到AI工具页面")

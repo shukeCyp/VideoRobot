@@ -55,7 +55,6 @@ def get_img2img_tasks():
                 'prompt': task.prompt,
                 'model': task.model,
                 'ratio': task.ratio,
-                'quality': task.quality,
                 'status': task.status,
                 'status_text': task.get_status_text(),
                 'account_id': task.account_id,
@@ -145,7 +144,10 @@ def create_img2img_task():
         # 获取表单数据
         prompt = request.form.get('prompt', '').strip()
         model = request.form.get('model', 'Nano Banana')
-        aspect_ratio = request.form.get('aspect_ratio', '1:1')
+        aspect_ratio = request.form.get('aspect_ratio')
+        # 如果用户没有选择比例或传递空字符串，则设置为None
+        if not aspect_ratio or aspect_ratio.strip() == '':
+            aspect_ratio = None
         
         # 验证图片数量
         valid_files = [f for f in files if f.filename != '']
@@ -445,36 +447,48 @@ def batch_download_img2img_tasks():
                 file_infos = []
                 for task in tasks:
                     images = task.get_images()
-                    for i, image_path in enumerate(images):
-                        if image_path and os.path.exists(image_path):
-                            # 生成文件名
-                            filename = f"img2img_task_{task.id}_{i+1}.{image_path.split('.')[-1]}"
+                    for i, image_url in enumerate(images):
+                        if image_url and image_url.strip():
+                            # 生成文件名，从URL获取文件扩展名
+                            if image_url.endswith('.png'):
+                                ext = 'png'
+                            elif image_url.endswith('.jpg') or image_url.endswith('.jpeg'):
+                                ext = 'jpg'
+                            else:
+                                ext = 'png'  # 默认为png
+                            filename = f"img2img_task_{task.id}_{i+1}.{ext}"
                             file_infos.append({
-                                'source_path': image_path,
+                                'url': image_url,
                                 'filename': filename
                             })
-                
+
                 if not file_infos:
                     print("没有找到可下载的图片")
                     return
-                
+
                 # 创建批量下载文件夹
                 timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
                 batch_folder = os.path.join(folder_path, f"jimeng_img2img_{timestamp}")
                 os.makedirs(batch_folder, exist_ok=True)
-                
-                # 复制文件
-                import shutil
+
+                # 下载文件
                 success_count = 0
                 for file_info in file_infos:
                     try:
+                        # 下载图片
+                        response = requests.get(file_info['url'], timeout=30)
+                        response.raise_for_status()
+                        
+                        # 保存文件
                         dest_path = os.path.join(batch_folder, file_info['filename'])
-                        shutil.copy2(file_info['source_path'], dest_path)
+                        with open(dest_path, 'wb') as f:
+                            f.write(response.content)
+                        
                         success_count += 1
-                        print(f"复制文件: {file_info['filename']}")
+                        print(f"下载文件: {file_info['filename']}")
                     except Exception as e:
-                        print(f"复制文件失败: {file_info['filename']}, 错误: {e}")
-                
+                        print(f"下载文件失败: {file_info['filename']}, 错误: {e}")
+
                 print(f"批量下载完成，成功下载 {success_count} 个文件到: {batch_folder}")
                 
             except Exception as e:

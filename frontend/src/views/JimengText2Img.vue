@@ -146,7 +146,7 @@
             </template>
           </el-table-column>
 
-          <el-table-column label="操作" width="320" fixed="right" align="center">
+          <el-table-column label="操作" width="380" fixed="right" align="center">
             <template #default="{ row }">
               <div class="action-buttons">
                 <!-- 失败原因图标 -->
@@ -183,6 +183,18 @@
                     <View />
                   </span>
                   查看
+                </el-button>
+                
+                <!-- 下载按钮 -->
+                <el-button 
+                  v-if="row.status === 2 && (row.result_image_url || (row.images && row.images.length > 0))"
+                  class="btn-download" size="small"
+                  @click="downloadSingleTask(row)"
+                >
+                  <span >
+                    <Download />
+                  </span>
+                  下载
                 </el-button>
                 
                 <!-- 删除按钮 -->
@@ -856,6 +868,24 @@ export default {
       }
     }
 
+    // 单个任务下载
+    const downloadSingleTask = async (task) => {
+      try {
+        ElMessage.info('准备下载任务图片，请在弹出的对话框中选择文件夹...')
+        
+        const response = await text2imgAPI.batchDownload([task.id])
+        
+        if (response.data.success) {
+          ElMessage.success(response.data.message)
+        } else {
+          ElMessage.error(response.data.message)
+        }
+      } catch (error) {
+        console.error('下载失败:', error)
+        ElMessage.error(error.response?.data?.message || '下载失败')
+      }
+    }
+
     // 批量重试状态
     const batchRetryLoading = ref(false)
 
@@ -1005,6 +1035,7 @@ export default {
       getImageUrls,
       selectedCompletedTasks,
       batchDownloadImages,
+      downloadSingleTask,
       batchDownloadLoading,
             batchRetryFailedTasks,
       batchRetryLoading,
@@ -1081,6 +1112,12 @@ export default {
 /* 表格特定样式 */
 .task-table-container {
   overflow-x: auto;
+  width: 100%;
+}
+
+.task-table-container .el-table {
+  width: 100%;
+  min-width: 100%;
 }
 
 .modern-table {
@@ -1429,6 +1466,18 @@ export default {
 
 .action-btn .el-icon {
   margin-right: 4px;
+}
+
+.btn-download {
+  color: #409eff;
+  border-color: #409eff;
+  background-color: rgba(64, 158, 255, 0.1);
+}
+
+.btn-download:hover {
+  color: #ffffff;
+  background-color: #409eff;
+  border-color: #409eff;
 }
 
 /* 页面特定响应式样式 */

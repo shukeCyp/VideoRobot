@@ -46,6 +46,14 @@
   margin: 0;
 }
 
+.page-subtitle {
+  color: white;
+  font-size: 16px;
+  font-weight: 400;
+  margin: 8px 0 0 0;
+  opacity: 0.9;
+}
+
 .add-task-btn {
   height: 48px;
   padding: 0 24px;

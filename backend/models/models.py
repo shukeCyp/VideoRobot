@@ -162,12 +162,15 @@ class JimengImg2ImgTask(BaseModel):
     # 基本字段
     prompt = TextField()  # 提示词
     model = CharField(max_length=100, default="Nano Banana")  # 使用的模型
-    ratio = CharField(max_length=20, default="1:1")  # 分辨率比例
-    
+    ratio = CharField(max_length=20, null=True, default=None)  # 分辨率比例
+
     # 状态字段 - 使用数字状态码
     # 0: 排队中, 1: 生成中, 2: 已完成, 3: 失败
     status = IntegerField(default=0)
 
+    # 关联账号
+    account_id = IntegerField(null=True)  # 使用的账号ID
+    
     # 输入图片 - 最多3张输入图片
     input_image1 = CharField(max_length=500, null=True)
     input_image2 = CharField(max_length=500, null=True)
@@ -192,7 +195,7 @@ class JimengImg2ImgTask(BaseModel):
     update_at = DateTimeField(default=datetime.now)
     
     class Meta:
-        table_name = 'jimeng_img2img_tasks'
+        table_name = 'jimeng_image2image_tasks'
         
     def get_status_text(self):
         """获取状态文字描述"""
@@ -256,11 +259,16 @@ class JimengImg2ImgTask(BaseModel):
     
     def can_retry(self):
         """判断任务是否可以重试"""
-        # 只有网络相关的失败才能重试
-        network_failure_reasons = ['WEB_INTERACTION_FAILED', 'TASK_ID_NOT_OBTAINED']
-        return (self.status == 3 and  # 任务失败
+        # 对于图生图任务，允许更多类型的失败进行重试
+        retryable_failure_reasons = [
+            'WEB_INTERACTION_FAILED', 
+            'TASK_ID_NOT_OBTAINED', 
+            'OTHER_ERROR',
+            'GENERATION_FAILED'
+        ]
+        return ((self.status == 3 or (self.status == 0 and self.failure_reason is not None)) and  # 任务失败或排队但有失败原因
                 self.retry_count < self.max_retry and  # 重试次数未超限
-                self.failure_reason in network_failure_reasons)  # 是网络问题
+                self.failure_reason in retryable_failure_reasons)  # 是可重试的失败
     
     def set_failure(self, error_code, error_message=None):
         """设置任务失败状态和原因"""
@@ -453,7 +461,7 @@ class JimengTaskRecord(BaseModel):
     # 关联的即梦账号
     jimeng_account = ForeignKeyField(JimengAccount, null=True, backref='jimeng_records')
 
-    task_type = IntegerField(null=True)  # 任务类型 1是文生图，2是图生视频， 3是数字人
+    task_type = IntegerField(null=True)  # 任务类型 1是文生图，2是图生视频， 3是数字人， 4是图生图
     # 时间戳
     created_at = DateTimeField(default=datetime.now)
     updated_at = DateTimeField(default=datetime.now)

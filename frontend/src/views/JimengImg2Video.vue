@@ -582,9 +582,9 @@ const handleBatchSubmit = async (submitData) => {
     // 创建FormData对象
     const formData = new FormData()
     
-    // 添加配置参数
+    // 添加配置参数 - 映射 duration 到 second
     formData.append('model', submitData.config.model)
-    formData.append('second', submitData.config.second)
+    formData.append('second', submitData.config.duration || submitData.config.second || 5)
     
     // 添加所有图片文件和对应的提示词
     submitData.tasks.forEach((task, index) => {
@@ -592,7 +592,7 @@ const handleBatchSubmit = async (submitData) => {
       formData.append(`prompts[${index}]`, task.prompt || '')
     })
     
-    const response = await jimengImg2videoAPI.batchAddTasks(formData)
+    const response = await img2videoAPI.batchAddTasks(formData)
     
     if (response.data.success) {
       ElMessage.success(`成功创建 ${submitData.tasks.length} 个任务`)
@@ -913,6 +913,7 @@ const batchDownloadVideos = async () => {
     
     if (response.data.success) {
       ElMessage.success(response.data.message || '开始批量下载')
+      ElMessage.info('请在桌面选择下载文件夹')
     } else {
       ElMessage.error(response.data.message || '批量下载失败')
     }

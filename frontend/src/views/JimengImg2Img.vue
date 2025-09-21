@@ -238,7 +238,7 @@
           </el-select>
         </el-form-item>
 
-        <el-form-item label="分辨率比例" prop="aspect_ratio">
+        <el-form-item label="分辨率比例" prop="aspect_ratio" v-if="shouldShowRatio">
           <el-select v-model="taskForm.aspect_ratio" placeholder="选择分辨率比例">
             <el-option label="1:1 (正方形)" value="1:1" />
             <el-option label="16:9 (横屏)" value="16:9" />
@@ -322,7 +322,7 @@ export default {
     const taskForm = reactive({
       prompt: '',
       model: 'Nano Banana',
-      aspect_ratio: '1:1',
+      aspect_ratio: '',  // NanoBanana模型默认不设置比例
       images: []
     })
     
@@ -350,6 +350,11 @@ export default {
       const maxCount = maxImageCount.value
       const countText = maxCount === 1 ? '1张图片' : `1-${maxCount}张图片`
       return `支持JPG、PNG、GIF等格式，最多上传${countText}，每张不超过10MB`
+    })
+    
+    // 计算属性 - 是否显示分辨率比例选择
+    const shouldShowRatio = computed(() => {
+      return taskForm.model !== 'Nano Banana' && taskForm.model !== 'Image 2.0 Pro'
     })
     
     // 获取任务列表
@@ -458,7 +463,11 @@ export default {
         const formData = new FormData()
         formData.append('prompt', taskForm.prompt)
         formData.append('model', taskForm.model)
-        formData.append('aspect_ratio', taskForm.aspect_ratio)
+        
+        // 只有当显示比例选择框时才添加aspect_ratio参数
+        if (shouldShowRatio.value && taskForm.aspect_ratio) {
+          formData.append('aspect_ratio', taskForm.aspect_ratio)
+        }
         
         // 添加图片文件
         taskForm.images.forEach(fileItem => {
@@ -489,7 +498,7 @@ export default {
       Object.assign(taskForm, {
         prompt: '',
         model: 'Nano Banana',
-        aspect_ratio: '1:1',
+        aspect_ratio: '',  // NanoBanana模型不设置默认比例
         images: []
       })
       if (uploadRef.value) {
@@ -683,6 +692,7 @@ export default {
       uploadRef,
       maxImageCount,
       uploadTipText,
+      shouldShowRatio,
       
       // 方法
       getTasks,

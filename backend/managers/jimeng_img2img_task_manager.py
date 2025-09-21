@@ -249,6 +249,19 @@ class JimengImg2ImgTaskManager:
                 if result.get('images'):
                     task.set_images(result['images'])
                 
+                # 添加任务记录
+                try:
+                    from backend.models.models import JimengTaskRecord
+                    record = JimengTaskRecord.create(
+                        account_id=account.id,
+                        task_type=4,  # 图生图任务类型
+                        created_at=datetime.now(),
+                        updated_at=datetime.now()
+                    )
+                    print(f"[线程{thread_id}] 添加图生图任务记录成功，记录ID: {record.id}")
+                except Exception as e:
+                    print(f"[线程{thread_id}] 添加任务记录失败: {str(e)}")
+                
                 with self.stats_lock:
                     self.stats['success_count'] += 1
                     self.stats['last_task_time'] = datetime.now()
@@ -299,9 +312,15 @@ class JimengImg2ImgTaskManager:
             task_params = {
                 'prompt': task.prompt,
                 'model': task.model,
-                'ratio': task.ratio,
-                'input_images': input_images
+                'input_images': input_images,
+                'username': account.account,
+                'password': account.password,
+                'cookies': account.cookies
             }
+            
+            # 只有当ratio不为None时才传递aspect_ratio参数
+            if task.ratio is not None:
+                task_params['aspect_ratio'] = task.ratio
             
             # 更新任务状态
             with self.tasks_lock:
@@ -309,12 +328,22 @@ class JimengImg2ImgTaskManager:
                     self.active_tasks[thread_id]['status'] = 'executing'
             
             # 执行任务
-            result = run_async_safe(executor.generate_images_with_cookies(
-                cookies=account.cookies,
-                **task_params
-            ))
+            result = run_async_safe(executor.run(**task_params))
             
-            return result
+            # 转换结果格式以匹配任务管理器期望的格式
+            if result.code == 200 and result.data:
+                return {
+                    'success': True,
+                    'images': result.data,
+                    'account_id': account.id,
+                    'cookies': result.cookies if hasattr(result, 'cookies') else None
+                }
+            else:
+                return {
+                    'success': False,
+                    'error_code': result.code,
+                    'message': result.message or '图生图任务执行失败'
+                }
             
         except Exception as e:
             print(f"执行图生图任务异常: {str(e)}")
@@ -327,25 +356,65 @@ class JimengImg2ImgTaskManager:
     def _get_available_account(self, preferred_account_id: Optional[int] = None) -> Optional[JimengAccount]:
         """获取可用的账号"""
         try:
+            from datetime import date
+            today = date.today()
+            
             # 如果指定了账号ID，优先使用指定账号
             if preferred_account_id:
                 try:
                     account = JimengAccount.get_by_id(preferred_account_id)
-                    if account.status == 1:  # 账号可用
+                    # 检查该账号今日图片生成使用次数（包括文生图和图生图）
+                    from backend.models.models import JimengTaskRecord
+                    today_usage = JimengTaskRecord.select().where(
+                        (JimengTaskRecord.account_id == account.id) &
+                        (JimengTaskRecord.task_type.in_([1, 4])) &  # 1=文生图, 4=图生图
+                        (JimengTaskRecord.created_at >= today)
+                    ).count()
+                    
+                    if today_usage < 50:  # 每日图生图限制50次
                         return account
                 except:
                     pass
             
-            # 获取所有可用账号
-            available_accounts = list(JimengAccount.select().where(
-                JimengAccount.status == 1  # 可用状态
-            ))
-            
-            if not available_accounts:
+            # 获取所有账号
+            accounts = list(JimengAccount.select())
+            if not accounts:
+                print("没有配置的即梦账号")
                 return None
             
-            # 随机选择一个账号（负载均衡）
-            return random.choice(available_accounts)
+            # 查找今日使用次数最少且未达上限的账号
+            available_accounts = []
+            min_usage = float('inf')
+            
+            for account in accounts:
+                # 统计今日该账号的图片生成使用次数（包括文生图和图生图）
+                from backend.models.models import JimengTaskRecord
+                today_usage = JimengTaskRecord.select().where(
+                    (JimengTaskRecord.account_id == account.id) &
+                    (JimengTaskRecord.task_type.in_([1, 4])) &  # 1=文生图, 4=图生图
+                    (JimengTaskRecord.created_at >= today)
+                ).count()
+                
+                print(f"账号 {account.account} 今日图片生成已使用: {today_usage}/50 次")
+                
+                # 检查是否还有可用次数
+                if today_usage < 50:  # 每日图片生成限制50次
+                    if today_usage < min_usage:
+                        # 发现更少使用次数的账号，重置列表
+                        min_usage = today_usage
+                        available_accounts = [account]
+                    elif today_usage == min_usage:
+                        # 使用次数相同，加入候选列表
+                        available_accounts.append(account)
+            
+            if available_accounts:
+                # 在相同使用次数的账号中随机选择一个
+                selected_account = random.choice(available_accounts)
+                print(f"选择账号: {selected_account.account} (今日已使用{min_usage}次)")
+                return selected_account
+            else:
+                print("所有账号今日图片生成次数已用完")
+                return None
             
         except Exception as e:
             print(f"获取可用账号失败: {str(e)}")

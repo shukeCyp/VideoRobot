@@ -578,7 +578,7 @@ class JimengTaskManager:
             task_type: 任务类型 ('text2img', 'img2video', 'digital_human')
         
         规则：
-        - 图片生成：每个账号每天可生成10次
+        - 图片生成：每个账号每天可生成50次
         - 视频生成：每个账号每天可生成1次
         - 数字人生成：每个账号每天可生成1次
         - 优先选择使用次数最少的账号
@@ -595,7 +595,7 @@ class JimengTaskManager:
             
             # 根据任务类型设置每日限制
             daily_limits = {
-                'text2img': 10,      # 图片生成每天10次
+                'text2img': 50,      # 图片生成每天50次
                 'img2video': 2,      # 视频生成每天1次
                 'digital_human': 1   # 数字人生成每天1次
             }

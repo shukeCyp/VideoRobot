@@ -538,7 +538,7 @@ class JimengImg2ImgExecutor(BaseTaskExecutor):
         username = kwargs.get('username')
         password = kwargs.get('password')
         model = kwargs.get('model', 'Nano Banana')
-        aspect_ratio = kwargs.get('aspect_ratio', '1:1')
+        aspect_ratio = kwargs.get('aspect_ratio', None)
         cookies = kwargs.get('cookies')
         input_images = kwargs.get('input_images', [])
         
@@ -653,7 +653,7 @@ class JimengImg2ImgExecutor(BaseTaskExecutor):
         return await self.execute(**kwargs)
 
 # 兼容性函数，保持向后兼容
-async def img2img(prompt, username, password, input_images=None, model="Nano Banana", aspect_ratio="1:1", headless=False, cookies=None):
+async def img2img(prompt, username, password, input_images=None, model="Nano Banana", aspect_ratio=None, headless=False, cookies=None):
     """
     兼容性函数，用于保持向后兼容
     """

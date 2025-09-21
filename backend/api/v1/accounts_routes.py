@@ -56,7 +56,7 @@ def get_accounts():
                     'digital_human': digital_human_usage
                 },
                 'daily_limits': {
-                    'text2img': 10,
+                    'text2img': 50,
                     'img2video': 2,  # 更新为2个视频任务
                     'digital_human': 1
                 }
@@ -228,7 +228,7 @@ def get_account_usage_stats():
             ).count()
             
             # 设置每日限额
-            text2img_limit = 10
+            text2img_limit = 50
             img2video_limit = 2  # 更新为2个视频任务
             digital_human_limit = 1
             

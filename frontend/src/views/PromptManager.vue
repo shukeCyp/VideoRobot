@@ -17,7 +17,7 @@
           <div class="stats-grid" v-if="stats">
         <div class="stat-card">
           <div class="stat-icon">
-            <el-icon><Platform /></el-icon>
+            <el-icon><Platform /></el-icon> 
           </div>
           <div class="stat-content">
             <div class="stat-value">{{ stats.total_platforms }}</div>
@@ -456,7 +456,7 @@ export default {
 .page-title {
   font-size: 28px;
   font-weight: 600;
-  color: var(--text-primary);
+  color: white;
   margin: 0 0 8px 0;
   display: flex;
   align-items: center;

@@ -206,12 +206,12 @@
             <div class="usage-details">
               <div class="usage-item">
                 <span class="usage-label">图片:</span>
-                <span class="usage-value">{{ row.today_usage?.text2img || 0 }}/{{ row.daily_limits?.text2img || 10 }}</span>
+                <span class="usage-value">{{ row.today_usage?.text2img || 0 }}/{{ row.daily_limits?.text2img || 50 }}</span>
               <el-progress 
-                  :percentage="((row.today_usage?.text2img || 0) / (row.daily_limits?.text2img || 10)) * 100" 
+                  :percentage="((row.today_usage?.text2img || 0) / (row.daily_limits?.text2img || 50)) * 100" 
                   :stroke-width="3"
                 :show-text="false"
-                  :color="getUsageColor(row.today_usage?.text2img || 0, row.daily_limits?.text2img || 10)"
+                  :color="getUsageColor(row.today_usage?.text2img || 0, row.daily_limits?.text2img || 50)"
                 />
               </div>
               <div class="usage-item">
@@ -657,7 +657,7 @@ export default {
       // 如果任何一种类型达到限制，账号就视为已满
       if (!account.today_usage || !account.daily_limits) return 'available'
       
-      const textImgFull = (account.today_usage.text2img || 0) >= (account.daily_limits.text2img || 10)
+      const textImgFull = (account.today_usage.text2img || 0) >= (account.daily_limits.text2img || 50)
       const videoFull = (account.today_usage.img2video || 0) >= (account.daily_limits.img2video || 2)
       const digitalHumanFull = (account.today_usage.digital_human || 0) >= (account.daily_limits.digital_human || 1)
       

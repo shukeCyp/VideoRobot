@@ -254,16 +254,17 @@
           </el-form-item>
           
         <el-form-item label="模型选择" prop="model">
-          <el-select v-model="taskForm.model" placeholder="选择生成模型" class="full-width">
+          <el-select v-model="taskForm.model" placeholder="选择生成模型" class="full-width" @change="(val) => handleModelChange(val, 'single')">
             <el-option label="Image 1.4" value="Image 1.4" />
             <el-option label="Image 2.0 Pro" value="Image 2.0 Pro" />
             <el-option label="Image 2.1" value="Image 2.1" />
             <el-option label="Image 3.0" value="Image 3.0" />
             <el-option label="Image 3.1" value="Image 3.1" />
+            <el-option label="Nano Banana" value="Nano Banana" />
                 </el-select>
               </el-form-item>
 
-        <el-form-item label="图像比例" prop="aspect_ratio">
+        <el-form-item label="图像比例" prop="aspect_ratio" v-if="showAspectRatio">
           <el-select v-model="taskForm.aspect_ratio" placeholder="选择图像比例" class="full-width">
             <el-option label="21:9 超宽屏" value="21:9" />
             <el-option label="16:9 横屏" value="16:9" />
@@ -338,18 +339,19 @@
           </el-form-item>
 
           <el-row :gutter="20">
-            <el-col :span="8">
+            <el-col :span="showBatchAspectRatio ? 8 : 12">
               <el-form-item label="模型" prop="model">
-                <el-select v-model="batchForm.model" class="full-width">
+                <el-select v-model="batchForm.model" class="full-width" @change="(val) => handleModelChange(val, 'batch')">
                   <el-option label="Image 1.4" value="Image 1.4" />
                   <el-option label="Image 2.0 Pro" value="Image 2.0 Pro" />
                   <el-option label="Image 2.1" value="Image 2.1" />
                   <el-option label="Image 3.0" value="Image 3.0" />
                   <el-option label="Image 3.1" value="Image 3.1" />
+                  <el-option label="Nano Banana" value="Nano Banana" />
                 </el-select>
               </el-form-item>
             </el-col>
-            <el-col :span="8">
+            <el-col :span="8" v-if="showBatchAspectRatio">
               <el-form-item label="比例" prop="aspect_ratio">
                 <el-select v-model="batchForm.aspect_ratio" class="full-width">
                   <el-option label="21:9" value="21:9" />
@@ -363,7 +365,7 @@
                 </el-select>
               </el-form-item>
             </el-col>
-            <el-col :span="8">
+            <el-col :span="showBatchAspectRatio ? 8 : 12">
               <el-form-item label="质量" prop="quality">
                 <el-select v-model="batchForm.quality" class="full-width">
                   <el-option label="1K" value="1K" />
@@ -526,21 +528,29 @@ export default {
     const currentTask = ref(null)
 
     // 表单验证规则
-    const taskRules = {
-      prompt: [
-        { required: true, message: '请输入提示词', trigger: 'blur' },
-        { min: 5, message: '提示词至少5个字符', trigger: 'blur' }
-      ],
-      model: [
-        { required: true, message: '请选择模型', trigger: 'change' }
-      ],
-      aspect_ratio: [
-        { required: true, message: '请选择分辨率比例', trigger: 'change' }
-      ],
-      quality: [
-        { required: true, message: '请选择清晰度', trigger: 'change' }
-      ]
-    }
+    const taskRules = computed(() => {
+      const rules = {
+        prompt: [
+          { required: true, message: '请输入提示词', trigger: 'blur' },
+          { min: 5, message: '提示词至少5个字符', trigger: 'blur' }
+        ],
+        model: [
+          { required: true, message: '请选择模型', trigger: 'change' }
+        ],
+        quality: [
+          { required: true, message: '请选择清晰度', trigger: 'change' }
+        ]
+      }
+      
+      // 只有非NanoBanana模型才需要用户手动选择aspect_ratio
+      if (taskForm.model !== 'Nano Banana') {
+        rules.aspect_ratio = [
+          { required: true, message: '请选择分辨率比例', trigger: 'change' }
+        ]
+      }
+      
+      return rules
+    })
 
     const taskFormRef = ref()
     const batchFormRef = ref()
@@ -596,7 +606,14 @@ export default {
         await taskFormRef.value.validate()
         addTaskLoading.value = true
 
-        const response = await text2imgAPI.createTask(taskForm)
+        // 确保NanoBanana模型有正确的aspect_ratio值
+        const taskData = { ...taskForm }
+        if (taskData.model === 'Nano Banana') {
+          taskData.aspect_ratio = '1:1'
+          console.log('NanoBanana模型，设置aspect_ratio为1:1')
+        }
+
+        const response = await text2imgAPI.createTask(taskData)
         if (response.data.success) {
           ElMessage.success('任务创建成功')
           showAddTaskDialog.value = false
@@ -630,9 +647,13 @@ export default {
           const taskData = {
             prompt: prompt.trim(),
             model: batchForm.model,
-            aspect_ratio: batchForm.aspect_ratio,
+            aspect_ratio: batchForm.model === 'Nano Banana' ? '1:1' : batchForm.aspect_ratio,
             quality: batchForm.quality,
             count: 1 // 批量添加时，count 固定为 1
+          }
+          
+          if (batchForm.model === 'Nano Banana') {
+            console.log('批量添加NanoBanana模型，设置aspect_ratio为1:1')
           }
 
           try {
@@ -741,6 +762,35 @@ export default {
         task && task.status === 2 && (task.result_image_url || (task.images && task.images.length > 0))
       )
     })
+
+    // 计算属性：是否显示图像比例选项（NanoBanana模型不需要比例）
+    const showAspectRatio = computed(() => {
+      return taskForm.model !== 'Nano Banana'
+    })
+
+    // 计算属性：批量添加时是否显示图像比例选项
+    const showBatchAspectRatio = computed(() => {
+      return batchForm.model !== 'Nano Banana'
+    })
+
+    // 监听模型变化，自动调整表单
+    const handleModelChange = (modelValue, formType = 'single') => {
+      if (modelValue === 'Nano Banana') {
+        // NanoBanana模型也设置为1:1，但在界面上隐藏
+        if (formType === 'single') {
+          taskForm.aspect_ratio = '1:1'
+        } else {
+          batchForm.aspect_ratio = '1:1'
+        }
+      } else {
+        // 如果切换到其他模型且比例为空，设置默认比例
+        if (formType === 'single' && !taskForm.aspect_ratio) {
+          taskForm.aspect_ratio = '1:1'
+        } else if (formType === 'batch' && !batchForm.aspect_ratio) {
+          batchForm.aspect_ratio = '1:1'
+        }
+      }
+    }
 
     // 状态筛选
     const handleStatusFilter = () => {
@@ -1042,7 +1092,10 @@ export default {
       getFailureReasonText,
       getFailureTooltipContent,
       customActions,
-      handleCustomAction
+      handleCustomAction,
+      showAspectRatio,
+      showBatchAspectRatio,
+      handleModelChange
     }
   }
 }

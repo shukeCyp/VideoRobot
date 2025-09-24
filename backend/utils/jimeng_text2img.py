@@ -550,9 +550,12 @@ class JimengText2ImageExecutor(BaseTaskExecutor):
                 return model_result
             
             # 选择比例
-            ratio_result = await self.select_aspect_ratio(aspect_ratio)
-            if ratio_result.code != ErrorCode.SUCCESS.value:
-                return ratio_result
+            if model != 'Nano Banana':
+                ratio_result = await self.select_aspect_ratio(aspect_ratio)
+                if ratio_result.code != ErrorCode.SUCCESS.value:
+                    return ratio_result
+            else:
+                self.logger.info("Nano Banana模型，不选择比例")
             
             # 开始生成
             gen_result = await self.start_generation()

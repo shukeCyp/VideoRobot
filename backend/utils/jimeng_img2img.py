@@ -432,7 +432,7 @@ class JimengImg2ImgExecutor(BaseTaskExecutor):
         try:
             # 等待获取到任务ID
             self.logger.info("等待获取任务ID")
-            wait_task_id_time = 30
+            wait_task_id_time = 120
             task_id_start_time = time.time()
             
             while not self.task_id and time.time() - task_id_start_time < wait_task_id_time:

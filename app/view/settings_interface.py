@@ -1,9 +1,11 @@
 from PyQt5.QtCore import Qt
-from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel
+from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QFileDialog
 from qfluentwidgets import (ScrollArea, ExpandLayout, SettingCardGroup, SettingCard,
                             SpinBox, BodyLabel, PrimaryPushButton,
-                            InfoBar, InfoBarPosition, FluentIcon as FIF)
+                            InfoBar, InfoBarPosition, FluentIcon as FIF,
+                            MessageBox)
 from app.utils.logger import log
+from app.utils.log_manager import get_log_manager
 
 
 class SettingsInterface(ScrollArea):
@@ -141,6 +143,71 @@ class SettingsInterface(ScrollArea):
         # 添加到布局
         self.expandLayout.addWidget(self.task_manager_group)
 
+        # 日志管理设置组
+        self.log_manager_group = SettingCardGroup("日志管理", self.scrollWidget)
+
+        # 日志信息显示卡片
+        self.log_info_card = SettingCard(
+            FIF.DOCUMENT,
+            "日志信息",
+            "查看当前日志文件大小",
+            self.log_manager_group
+        )
+
+        # 添加日志信息显示
+        log_info_container = QWidget(self.log_info_card)
+        log_info_layout = QHBoxLayout(log_info_container)
+        log_info_layout.setContentsMargins(0, 0, 0, 0)
+        log_info_layout.setSpacing(10)
+
+        self.log_size_label = BodyLabel("计算中...", log_info_container)
+        self.log_size_label.setStyleSheet("color: rgba(255, 255, 255, 0.8); font-weight: bold;")
+        log_info_layout.addWidget(self.log_size_label)
+
+        self.refresh_log_btn = PrimaryPushButton(FIF.SYNC, "刷新", log_info_container)
+        self.refresh_log_btn.clicked.connect(self.onRefreshLogInfo)
+        log_info_layout.addWidget(self.refresh_log_btn)
+
+        self.log_info_card.hBoxLayout.addWidget(log_info_container, 0, Qt.AlignRight)
+        self.log_info_card.hBoxLayout.addSpacing(16)
+
+        # 清除日志卡片
+        self.clear_log_card = SettingCard(
+            FIF.DELETE,
+            "清除日志",
+            "删除所有日志文件以释放空间",
+            self.log_manager_group
+        )
+
+        self.clear_log_btn = PrimaryPushButton(FIF.DELETE, "清除日志", self.clear_log_card)
+        self.clear_log_btn.clicked.connect(self.onClearLogs)
+        self.clear_log_card.hBoxLayout.addWidget(self.clear_log_btn, 0, Qt.AlignRight)
+        self.clear_log_card.hBoxLayout.addSpacing(16)
+
+        # 打包日志卡片
+        self.pack_log_card = SettingCard(
+            FIF.ZIP_FOLDER,
+            "打包日志",
+            "将日志文件打包为 ZIP 压缩包",
+            self.log_manager_group
+        )
+
+        self.pack_log_btn = PrimaryPushButton(FIF.ZIP_FOLDER, "打包日志", self.pack_log_card)
+        self.pack_log_btn.clicked.connect(self.onPackLogs)
+        self.pack_log_card.hBoxLayout.addWidget(self.pack_log_btn, 0, Qt.AlignRight)
+        self.pack_log_card.hBoxLayout.addSpacing(16)
+
+        # 添加到组
+        self.log_manager_group.addSettingCard(self.log_info_card)
+        self.log_manager_group.addSettingCard(self.clear_log_card)
+        self.log_manager_group.addSettingCard(self.pack_log_card)
+
+        # 添加到布局
+        self.expandLayout.addWidget(self.log_manager_group)
+
+        # 初始化日志信息
+        self.onRefreshLogInfo()
+
     def onStartTaskManager(self):
         """启动任务管理器"""
         from app.managers.global_task_manager import get_global_task_manager
@@ -194,3 +261,109 @@ class SettingsInterface(ScrollArea):
             parent=self,
             position=InfoBarPosition.TOP
         )
+
+    def onRefreshLogInfo(self):
+        """刷新日志信息"""
+        try:
+            log_manager = get_log_manager()
+            total_size, formatted_size = log_manager.get_log_size()
+            file_count = log_manager.get_log_files_count()
+
+            self.log_size_label.setText(f"{formatted_size} ({file_count} 个文件)")
+            log.debug(f"日志信息已刷新: {formatted_size}, {file_count} 个文件")
+
+        except Exception as e:
+            self.log_size_label.setText("获取失败")
+            log.error(f"刷新日志信息失败: {str(e)}")
+
+    def onClearLogs(self):
+        """清除日志"""
+        # 显示确认对话框
+        w = MessageBox(
+            "确认清除",
+            "确定要删除所有日志文件吗？此操作不可恢复！",
+            self
+        )
+        w.yesButton.setText("确定")
+        w.cancelButton.setText("取消")
+
+        if w.exec():
+            try:
+                log_manager = get_log_manager()
+                success, message = log_manager.clear_logs()
+
+                if success:
+                    InfoBar.success(
+                        title="清除成功",
+                        content=message,
+                        parent=self,
+                        position=InfoBarPosition.TOP,
+                        duration=3000
+                    )
+                    # 刷新日志信息
+                    self.onRefreshLogInfo()
+                else:
+                    InfoBar.error(
+                        title="清除失败",
+                        content=message,
+                        parent=self,
+                        position=InfoBarPosition.TOP,
+                        duration=3000
+                    )
+
+            except Exception as e:
+                InfoBar.error(
+                    title="清除失败",
+                    content=f"发生错误: {str(e)}",
+                    parent=self,
+                    position=InfoBarPosition.TOP,
+                    duration=3000
+                )
+
+    def onPackLogs(self):
+        """打包日志"""
+        try:
+            # 打开文件保存对话框
+            file_path, _ = QFileDialog.getSaveFileName(
+                self,
+                "保存日志压缩包",
+                f"logs_backup_{self._get_timestamp()}.zip",
+                "ZIP 文件 (*.zip)"
+            )
+
+            if not file_path:
+                return
+
+            log_manager = get_log_manager()
+            success, result = log_manager.pack_logs(file_path)
+
+            if success:
+                InfoBar.success(
+                    title="打包成功",
+                    content=f"日志已保存到: {result}",
+                    parent=self,
+                    position=InfoBarPosition.TOP,
+                    duration=5000
+                )
+            else:
+                InfoBar.error(
+                    title="打包失败",
+                    content=result,
+                    parent=self,
+                    position=InfoBarPosition.TOP,
+                    duration=3000
+                )
+
+        except Exception as e:
+            InfoBar.error(
+                title="打包失败",
+                content=f"发生错误: {str(e)}",
+                parent=self,
+                position=InfoBarPosition.TOP,
+                duration=3000
+            )
+
+    def _get_timestamp(self):
+        """获取当前时间戳字符串"""
+        from datetime import datetime
+        return datetime.now().strftime("%Y%m%d_%H%M%S")

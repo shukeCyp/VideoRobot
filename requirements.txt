@@ -6,3 +6,4 @@ loguru
 playwright
 pandas
 openpyxl
+PyUpdater[s3,scp]

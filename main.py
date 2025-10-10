@@ -172,6 +172,45 @@ def exception_hook(exctype, value, tb):
     sys.__excepthook__(exctype, value, tb)
 
 
+def check_for_updates(parent=None):
+    """检查更新"""
+    try:
+        from app.utils.update_manager import get_update_manager
+        from app.view.update_dialog import UpdateDialog
+
+        log.info("开始检查更新...")
+
+        manager = get_update_manager()
+        update_thread = manager.check_for_updates()
+
+        if not update_thread:
+            log.warning("无法启动更新检查")
+            return
+
+        # 连接信号
+        def on_update_available(app_update):
+            log.info(f"发现新版本: {app_update.version}")
+            # 显示更新对话框
+            dialog = UpdateDialog(app_update, parent)
+            dialog.exec_()
+
+        def on_no_update():
+            log.info("当前已是最新版本")
+
+        def on_error(error_msg):
+            log.error(f"检查更新出错: {error_msg}")
+
+        update_thread.update_available.connect(on_update_available)
+        update_thread.no_update.connect(on_no_update)
+        update_thread.error_occurred.connect(on_error)
+
+        # 启动检查
+        update_thread.start()
+
+    except Exception as e:
+        log.error(f"检查更新功能异常: {str(e)}")
+
+
 def init_app_with_splash(splash, app):
     """带启动界面的初始化"""
     from PyQt5.QtCore import QTimer
@@ -293,6 +332,10 @@ def main():
     def show_main_window():
         window.show()
         log.info("主窗口已显示")
+
+        # 延迟检查更新(启动后3秒)
+        from PyQt5.QtCore import QTimer
+        QTimer.singleShot(3000, lambda: check_for_updates(window))
 
     splash.finished.connect(show_main_window)
 

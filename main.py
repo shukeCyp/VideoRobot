@@ -180,18 +180,23 @@ def check_for_updates(parent=None):
 
         log.info("开始检查更新...")
 
-        manager = get_update_manager()
-        update_thread = manager.check_for_updates()
+        # TODO: 替换为你的 GitHub 仓库信息
+        manager = get_update_manager(
+            repo_owner="YOUR_GITHUB_USERNAME",
+            repo_name="YOUR_REPO_NAME"
+        )
 
-        if not update_thread:
+        update_checker = manager.check_for_updates()
+
+        if not update_checker:
             log.warning("无法启动更新检查")
             return
 
         # 连接信号
-        def on_update_available(app_update):
-            log.info(f"发现新版本: {app_update.version}")
+        def on_update_available(update_info):
+            log.info(f"发现新版本: {update_info.get('version')}")
             # 显示更新对话框
-            dialog = UpdateDialog(app_update, parent)
+            dialog = UpdateDialog(update_info, parent)
             dialog.exec_()
 
         def on_no_update():
@@ -200,12 +205,12 @@ def check_for_updates(parent=None):
         def on_error(error_msg):
             log.error(f"检查更新出错: {error_msg}")
 
-        update_thread.update_available.connect(on_update_available)
-        update_thread.no_update.connect(on_no_update)
-        update_thread.error_occurred.connect(on_error)
+        update_checker.update_available.connect(on_update_available)
+        update_checker.no_update.connect(on_no_update)
+        update_checker.error_occurred.connect(on_error)
 
         # 启动检查
-        update_thread.start()
+        update_checker.start()
 
     except Exception as e:
         log.error(f"检查更新功能异常: {str(e)}")

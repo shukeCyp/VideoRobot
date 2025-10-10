@@ -3,23 +3,23 @@
 更新提示对话框
 """
 from PyQt5.QtCore import Qt
-from PyQt5.QtWidgets import QVBoxLayout, QHBoxLayout
+from PyQt5.QtWidgets import QVBoxLayout, QHBoxLayout, QApplication
 from qfluentwidgets import (
     MessageBox, ProgressBar, PrimaryPushButton,
     PushButton, BodyLabel, SubtitleLabel, InfoBar, InfoBarPosition
 )
-from app.utils.update_manager import get_update_manager
 from app.utils.logger import log
 
 
 class UpdateDialog(MessageBox):
     """更新提示对话框"""
 
-    def __init__(self, app_update, parent=None):
+    def __init__(self, update_info: dict, parent=None):
         super().__init__("发现新版本", "", parent)
 
-        self.app_update = app_update
-        self.update_thread = None
+        self.update_info = update_info
+        self.download_thread = None
+        self.installer_path = None
         self.parent_widget = parent
 
         # 设置内容
@@ -39,70 +39,124 @@ class UpdateDialog(MessageBox):
 
     def _setup_content(self):
         """设置对话框内容"""
-        version = self.app_update.version
+        version = self.update_info.get("version", "未知")
+        current_version = self.update_info.get("current_version", "未知")
+        release_notes = self.update_info.get("release_notes", "")
 
         content = f"<b>最新版本:</b> v{version}<br>"
-        content += f"<b>当前版本:</b> v{self.app_update.current_version}<br><br>"
-        content += "<b>点击\"立即更新\"开始下载更新</b>"
+        content += f"<b>当前版本:</b> v{current_version}<br><br>"
+
+        if release_notes:
+            # 提取前5行更新说明
+            notes_lines = release_notes.split('\n')[:5]
+            content += "<b>更新内容:</b><br>"
+            for line in notes_lines:
+                if line.strip():
+                    content += f"• {line.strip()}<br>"
+            content += "<br>"
+
+        content += "<b>点击\"立即更新\"开始下载</b>"
 
         self.textLabel.setText(content)
 
     def start_download(self):
         """开始下载更新"""
-        # 禁用按钮
-        self.yesButton.setEnabled(False)
-        self.cancelButton.setEnabled(False)
-        self.yesButton.setText("下载中...")
+        try:
+            from app.utils.update_manager import get_update_manager
 
-        # 显示进度条
-        self.progress_bar.setVisible(True)
-        self.progress_bar.setValue(0)
+            # 禁用按钮
+            self.yesButton.setEnabled(False)
+            self.cancelButton.setEnabled(False)
+            self.yesButton.setText("下载中...")
 
-        # 获取更新线程
-        manager = get_update_manager()
-        self.update_thread = manager.update_thread
+            # 显示进度条
+            self.progress_bar.setVisible(True)
+            self.progress_bar.setValue(0)
 
-        if self.update_thread:
-            # 连接信号
-            self.update_thread.download_progress.connect(self.on_download_progress)
-            self.update_thread.download_complete.connect(self.on_download_complete)
-            self.update_thread.error_occurred.connect(self.on_error)
+            log.info("开始下载更新包...")
+
+            # 获取下载URL
+            download_url = self.update_info.get("download_url")
+
+            if not download_url:
+                self.on_error("未找到下载链接")
+                return
 
             # 开始下载
-            self.update_thread.download_update()
+            manager = get_update_manager()
+            self.download_thread = manager.download_update(download_url)
 
-    def on_download_progress(self, percent):
+            # 连接信号
+            self.download_thread.download_progress.connect(self.on_download_progress)
+            self.download_thread.download_complete.connect(self.on_download_complete)
+            self.download_thread.error_occurred.connect(self.on_error)
+
+            # 启动下载
+            self.download_thread.start()
+
+        except Exception as e:
+            error_msg = f"启动下载失败: {str(e)}"
+            log.error(error_msg)
+            self.on_error(error_msg)
+
+    def on_download_progress(self, downloaded: int, total: int, percent: int):
         """下载进度回调"""
         self.progress_bar.setValue(percent)
         self.yesButton.setText(f"下载中... {percent}%")
 
-    def on_download_complete(self):
+    def on_download_complete(self, installer_path: str):
         """下载完成"""
         self.progress_bar.setValue(100)
         self.yesButton.setText("下载完成")
+        self.installer_path = installer_path
+
+        log.info(f"更新包下载完成: {installer_path}")
 
         # 显示安装提示
         w = MessageBox(
-            "准备安装更新",
-            "更新已下载完成，应用将关闭并安装更新，然后自动重启。\n\n确认立即安装吗？",
+            "下载完成",
+            f"更新包已下载到:\n{installer_path}\n\n点击\"打开\"启动安装程序",
             self.parent_widget
         )
-        w.yesButton.setText("立即安装")
+        w.yesButton.setText("打开")
         w.cancelButton.setText("稍后安装")
 
         if w.exec():
             # 用户确认安装
-            log.info("用户确认安装更新")
             self.accept()
 
-            # 解压并重启
-            if self.update_thread:
-                self.update_thread.extract_and_restart()
+            # 启动安装程序
+            from app.utils.update_manager import get_update_manager
+            manager = get_update_manager()
+
+            if manager.install_update(installer_path):
+                log.info("安装程序已启动，应用即将退出")
+
+                # 显示提示
+                InfoBar.success(
+                    title="正在安装更新",
+                    content="请按照安装向导完成更新",
+                    parent=self.parent_widget,
+                    position=InfoBarPosition.TOP,
+                    duration=3000
+                )
+
+                # 延迟退出应用
+                from PyQt5.QtCore import QTimer
+                QTimer.singleShot(2000, lambda: QApplication.quit())
+            else:
+                InfoBar.error(
+                    title="启动失败",
+                    content="无法启动安装程序，请手动打开",
+                    parent=self.parent_widget,
+                    position=InfoBarPosition.TOP,
+                    duration=5000
+                )
         else:
             # 用户取消，关闭对话框
             self.reject()
 
-    def on_error(self, error_msg):
+    def on_error(self, error_msg: str):
         """下载错误"""
         log.error(f"更新失败: {error_msg}")
 

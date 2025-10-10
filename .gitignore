@@ -209,8 +209,3 @@ outputs/
 cache/
 .claude/
 
-# PyUpdater
-.pyupdater/
-pyu-data/
-keypack.pyu
-

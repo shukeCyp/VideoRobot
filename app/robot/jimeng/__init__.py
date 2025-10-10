@@ -1,1 +1,4 @@
-# Jimeng robot package
+# -*- coding: utf-8 -*-
+"""
+即梦机器人模块
+"""

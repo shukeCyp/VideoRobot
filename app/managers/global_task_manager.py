@@ -130,11 +130,32 @@ class GlobalTaskManager(QThread):
             executor: 任务执行器
             task: 任务对象
         """
-        # TODO: 实现任务提交逻辑
-        # 1. 发送任务开始信号
-        # 2. 提交到线程池
-        # 3. 设置回调处理完成/失败
-        pass
+        try:
+            task_id = getattr(task, 'id', None)
+            task_type = executor.get_task_type()
+
+            log.info(f"提交任务到线程池: {task_type} - ID={task_id}")
+
+            # 发送任务开始信号
+            self.task_started.emit(task_type, task_id)
+
+            # 提交到线程池执行
+            future = self.thread_pool.submit(executor.execute_task, task)
+
+            # 添加完成回调
+            def task_done_callback(f):
+                try:
+                    success = f.result()
+                    log.info(f"任务完成: {task_type} - ID={task_id}, 成功={success}")
+                    self.task_finished.emit(task_type, task_id, success)
+                except Exception as e:
+                    log.error(f"任务执行异常: {task_type} - ID={task_id}, 错误={str(e)}")
+                    self.task_finished.emit(task_type, task_id, False)
+
+            future.add_done_callback(task_done_callback)
+
+        except Exception as e:
+            log.error(f"提交任务失败: {str(e)}")
 
     def stop(self):
         """停止任务管理器"""

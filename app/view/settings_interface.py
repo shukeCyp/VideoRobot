@@ -205,6 +205,40 @@ class SettingsInterface(ScrollArea):
         # 添加到布局
         self.expandLayout.addWidget(self.log_manager_group)
 
+        # 关于应用设置组
+        self.about_group = SettingCardGroup("关于", self.scrollWidget)
+
+        # 版本信息卡片
+        self.version_card = SettingCard(
+            FIF.INFO,
+            "版本信息",
+            self._get_version_description(),
+            self.about_group
+        )
+
+        # 添加版本号显示
+        version_container = QWidget(self.version_card)
+        version_layout = QHBoxLayout(version_container)
+        version_layout.setContentsMargins(0, 0, 0, 0)
+        version_layout.setSpacing(10)
+
+        self.version_label = BodyLabel(f"v{self._get_current_version()}", version_container)
+        self.version_label.setStyleSheet("color: rgba(255, 255, 255, 0.8); font-weight: bold; font-size: 14px;")
+        version_layout.addWidget(self.version_label)
+
+        self.check_update_btn = PrimaryPushButton(FIF.UPDATE, "检查更新", version_container)
+        self.check_update_btn.clicked.connect(self.onCheckUpdate)
+        version_layout.addWidget(self.check_update_btn)
+
+        self.version_card.hBoxLayout.addWidget(version_container, 0, Qt.AlignRight)
+        self.version_card.hBoxLayout.addSpacing(16)
+
+        # 添加到组
+        self.about_group.addSettingCard(self.version_card)
+
+        # 添加到布局
+        self.expandLayout.addWidget(self.about_group)
+
         # 初始化日志信息
         self.onRefreshLogInfo()
 
@@ -367,3 +401,110 @@ class SettingsInterface(ScrollArea):
         """获取当前时间戳字符串"""
         from datetime import datetime
         return datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    def _get_current_version(self):
+        """获取当前版本号"""
+        try:
+            from app.version import __version__
+            return __version__
+        except Exception as e:
+            log.error(f"获取版本号失败: {str(e)}")
+            return "未知"
+
+    def _get_version_description(self):
+        """获取版本描述"""
+        try:
+            from app.version import __version__, __app_name__
+            return f"{__app_name__} - 当前版本"
+        except Exception:
+            return "当前版本"
+
+    def onCheckUpdate(self):
+        """检查更新"""
+        try:
+            from app.utils.update_manager import get_update_manager
+            from app.view.update_dialog import UpdateDialog
+
+            # 禁用按钮
+            self.check_update_btn.setEnabled(False)
+            self.check_update_btn.setText("检查中...")
+
+            log.info("用户手动检查更新...")
+
+            manager = get_update_manager()
+            update_thread = manager.check_for_updates()
+
+            if not update_thread:
+                log.warning("无法启动更新检查")
+                self.check_update_btn.setEnabled(True)
+                self.check_update_btn.setText("检查更新")
+                InfoBar.error(
+                    title="检查失败",
+                    content="无法启动更新检查",
+                    parent=self,
+                    position=InfoBarPosition.TOP,
+                    duration=3000
+                )
+                return
+
+            # 连接信号
+            def on_update_available(app_update):
+                log.info(f"发现新版本: {app_update.version}")
+                # 恢复按钮状态
+                self.check_update_btn.setEnabled(True)
+                self.check_update_btn.setText("检查更新")
+
+                # 显示更新对话框
+                dialog = UpdateDialog(app_update, self)
+                dialog.exec_()
+
+            def on_no_update():
+                log.info("当前已是最新版本")
+                # 恢复按钮状态
+                self.check_update_btn.setEnabled(True)
+                self.check_update_btn.setText("检查更新")
+
+                InfoBar.success(
+                    title="已是最新版本",
+                    content=f"当前版本 v{self._get_current_version()} 已是最新",
+                    parent=self,
+                    position=InfoBarPosition.TOP,
+                    duration=3000
+                )
+
+            def on_error(error_msg):
+                log.error(f"检查更新出错: {error_msg}")
+                # 恢复按钮状态
+                self.check_update_btn.setEnabled(True)
+                self.check_update_btn.setText("检查更新")
+
+                InfoBar.error(
+                    title="检查更新失败",
+                    content=error_msg,
+                    parent=self,
+                    position=InfoBarPosition.TOP,
+                    duration=5000
+                )
+
+            update_thread.update_available.connect(on_update_available)
+            update_thread.no_update.connect(on_no_update)
+            update_thread.error_occurred.connect(on_error)
+
+            # 启动检查
+            update_thread.start()
+
+        except Exception as e:
+            error_msg = f"检查更新功能异常: {str(e)}"
+            log.error(error_msg)
+
+            # 恢复按钮状态
+            self.check_update_btn.setEnabled(True)
+            self.check_update_btn.setText("检查更新")
+
+            InfoBar.error(
+                title="操作失败",
+                content=error_msg,
+                parent=self,
+                position=InfoBarPosition.TOP,
+                duration=5000
+            )

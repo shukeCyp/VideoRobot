@@ -1,6 +1,6 @@
-# 舒克AI工具集 (ShukeAITools)
+# VideoRobot
 
-> 一个基于Web的AI工具集合平台，主要用于技术交流和学习
+> 一个基于Web的AI视频创作工具集，主要用于AI视频生成和内容创作
 
 
 ## 友情赞助
@@ -18,7 +18,7 @@
 
 ## 📖 项目简介
 
-舒克AI工具集是一个开源项目，旨在为开发者和AI爱好者提供便捷的AI工具使用体验。本项目采用前后端分离架构，支持多种AI平台的集成和管理。
+VideoRobot是一个开源项目，旨在为开发者和AI爱好者提供便捷的AI视频创作工具使用体验。本项目采用前后端分离架构，支持多种AI平台的集成和管理。
 
 ### 🎯 功能描述
 
@@ -142,7 +142,7 @@ npm run dev
 ## 项目结构
 
 ```
-ShukeAITools/
+VideoRobot/
 ├── backend/                 # 后端代码
 │   ├── api/                # API路由
 │   ├── core/               # 核心模块
@@ -186,8 +186,8 @@ ShukeAITools/
 
 ## 联系方式
 
-- **项目地址**：https://github.com/shukeCyp/ShukeAITools
-- **问题反馈**：https://github.com/shukeCyp/ShukeAITools/issues
+- **项目地址**：https://github.com/shukeCyp/VideoRobot
+- **问题反馈**：https://github.com/shukeCyp/VideoRobot/issues
 
 ## 致谢
 
@@ -200,4 +200,4 @@ ShukeAITools/
 
 ## Star趋势
 
-[![Star History Chart](https://api.star-history.com/svg?repos=shukeCyp/ShukeAITools&type=Date)](https://star-history.com/#shukeCyp/ShukeAITools&Date)
+[![Star History Chart](https://api.star-history.com/svg?repos=shukeCyp/VideoRobot&type=Date)](https://star-history.com/#shukeCyp/VideoRobot&Date)

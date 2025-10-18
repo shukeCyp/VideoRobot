@@ -6,8 +6,8 @@
       <el-header class="app-header">
         <div class="header-content">
           <div class="logo">
-            <el-icon size="32"><Tools /></el-icon>
-            <h1>舒克AI工具集</h1>
+            <img src="/icon.png" alt="VideoRobot" class="logo-icon" />
+            <h1>VideoRobot</h1>
           </div>
           <div class="center-slogan">
             <span class="logo-slogan">用科技让复杂的世界更简单</span>
@@ -103,14 +103,14 @@
               </el-menu-item>
             </el-sub-menu>
             
-            <!-- 系统设置 -->
-            <el-sub-menu index="settings">
+            <!-- 个人中心 -->
+            <el-sub-menu index="my-profile">
               <template #title>
-                <el-icon><Setting /></el-icon>
-                <span>系统设置</span>
+                <el-icon><User /></el-icon>
+                <span>我的</span>
               </template>
               <el-menu-item index="base-config">
-                <el-icon><Tools /></el-icon>
+                <el-icon><Setting /></el-icon>
                 <span>基础配置</span>
               </el-menu-item>
             </el-sub-menu>
@@ -211,7 +211,7 @@
             <!-- 关于我们 -->
             <div v-if="activeMenu === 'about'" class="page-content">
                 <div class="about-content">
-                  <h2>关于舒克AI工具集</h2>
+                  <h2>关于VideoRobot</h2>
                 <p><strong>版本:</strong> 1.0.0</p>
                 <p><strong>技术栈:</strong> Vue 3 + Element Plus + Flask + SQLite + Playwright</p>
                 <p><strong>开发者:</strong> 舒克AI团队</p>
@@ -326,7 +326,7 @@
         
         <!-- 介绍文字 -->
         <div class="group-text">
-          <h3>舒克AI工具集交流群</h3>
+          <h3>VideoRobot交流群</h3>
         </div>
         
         <!-- 二维码图片 -->
@@ -408,7 +408,6 @@
 import { ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import {
-  Tools,
   Connection,
   House,
   User,
@@ -461,7 +460,6 @@ export default {
     TaskManager,
     PromptManager,
     BaseConfig,
-    Tools,
     Connection,
     House,
     User,
@@ -713,12 +711,10 @@ export default {
   font-weight: 700;
 }
 
-.logo .el-icon {
-  background: var(--primary-gradient);
-  color: white;
-  padding: 8px;
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow-sm);
+.logo .logo-icon {
+  width: 48px;
+  height: 48px;
+  object-fit: contain;
 }
 
 .logo h1 {

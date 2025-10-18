@@ -125,6 +125,9 @@ export const text2imgAPI = {
   // 批量下载图片
   batchDownload: (taskIds) => api.post('/jimeng/text2img/tasks/batch-download', { task_ids: taskIds }),
 
+  // 批量下载图片v2 - 为每个任务创建单独文件夹
+  batchDownloadV2: (taskIds) => api.post('/jimeng/text2img/tasks/batch-download-v2', { task_ids: taskIds }),
+
   // 删除今日前任务
   deleteTasksBeforeToday: () => api.delete('/jimeng/text2img/tasks/delete-before-today')
 }

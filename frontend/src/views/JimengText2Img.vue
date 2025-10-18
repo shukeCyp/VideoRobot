@@ -73,6 +73,14 @@
           </el-button>
 
           <el-button
+            class="btn-batch-download-v2"
+            @click="batchDownloadImagesV2"
+            :disabled="selectedCompletedTasks.length === 0"
+          >
+            <el-icon><Download /></el-icon> 批量下载2
+          </el-button>
+
+          <el-button
             class="btn-batch-delete"
             @click="batchDeleteTasks"
             :disabled="selectedCompletedTasks.length === 0"
@@ -509,6 +517,7 @@ export default {
     const addTaskLoading = ref(false)
     const batchAddLoading = ref(false)
     const batchDownloadLoading = ref(false)
+    const batchDownloadV2Loading = ref(false)
 
     // 表单数据
     const taskForm = reactive({
@@ -922,9 +931,9 @@ export default {
     const downloadSingleTask = async (task) => {
       try {
         ElMessage.info('准备下载任务图片，请在弹出的对话框中选择文件夹...')
-        
+
         const response = await text2imgAPI.batchDownload([task.id])
-        
+
         if (response.data.success) {
           ElMessage.success(response.data.message)
         } else {
@@ -933,6 +942,34 @@ export default {
       } catch (error) {
         console.error('下载失败:', error)
         ElMessage.error(error.response?.data?.message || '下载失败')
+      }
+    }
+
+    // 批量下载图片v2 - 为每个任务创建单独文件夹
+    const batchDownloadImagesV2 = async () => {
+      if (selectedCompletedTasks.value.length === 0) {
+        ElMessage.warning('请选择已完成的任务')
+        return
+      }
+
+      batchDownloadV2Loading.value = true
+      try {
+        const taskIds = selectedCompletedTasks.value.map(task => task.id)
+
+        ElMessage.info(`准备批量下载 ${selectedCompletedTasks.value.length} 个任务，将在选择的路径下创建时间文件夹，每个任务一个子文件夹，请在弹出的对话框中选择保存位置...`)
+
+        const response = await text2imgAPI.batchDownloadV2(taskIds)
+
+        if (response.data.success) {
+          ElMessage.success(response.data.message)
+        } else {
+          ElMessage.error(response.data.message)
+        }
+      } catch (error) {
+        console.error('批量下载2失败:', error)
+        ElMessage.error(error.response?.data?.message || '批量下载2失败')
+      } finally {
+        batchDownloadV2Loading.value = false
       }
     }
 
@@ -1085,8 +1122,10 @@ export default {
       getImageUrls,
       selectedCompletedTasks,
       batchDownloadImages,
+      batchDownloadImagesV2,
       downloadSingleTask,
       batchDownloadLoading,
+      batchDownloadV2Loading,
             batchRetryFailedTasks,
       batchRetryLoading,
       getFailureReasonText,
@@ -1130,6 +1169,24 @@ export default {
 .batch-download-btn:hover {
   background-color: #66b1ff;
   border-color: #66b1ff;
+}
+
+.btn-batch-download-v2 {
+  background-color: #67C23A;
+  border-color: #67C23A;
+  color: #ffffff !important;
+}
+
+.btn-batch-download-v2:hover {
+  background-color: #85ce61;
+  border-color: #85ce61;
+  color: #ffffff !important;
+}
+
+.btn-batch-download-v2:disabled {
+  background-color: #c8c9cc;
+  border-color: #c8c9cc;
+  color: #ffffff !important;
 }
 
 .batch-retry-btn {

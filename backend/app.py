@@ -165,7 +165,7 @@ print("全局任务管理器已启动")
 print("自动重试调度器已启动")
 
 if __name__ == '__main__':
-    print("舒克AI工具集后端服务启动中...")
+    print("VideoRobot后端服务启动中...")
     print("数据库连接成功")
     print("API服务运行在: http://localhost:8888")
     print("可用路由:")

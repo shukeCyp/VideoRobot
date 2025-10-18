@@ -3,9 +3,10 @@ from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QFileDial
 from qfluentwidgets import (ScrollArea, ExpandLayout, SettingCardGroup, SettingCard,
                             SpinBox, BodyLabel, PrimaryPushButton,
                             InfoBar, InfoBarPosition, FluentIcon as FIF,
-                            MessageBox)
+                            MessageBox, SwitchButton)
 from app.utils.logger import log
 from app.utils.log_manager import get_log_manager
+from app.utils.config_manager import get_config_manager
 
 
 class SettingsInterface(ScrollArea):
@@ -135,9 +136,32 @@ class SettingsInterface(ScrollArea):
         self.control_card.hBoxLayout.addWidget(control_container, 0, Qt.AlignRight)
         self.control_card.hBoxLayout.addSpacing(16)
 
+        # 浏览器窗口显示设置卡片
+        self.browser_headless_card = SettingCard(
+            FIF.VIEW,
+            "隐藏浏览器窗口",
+            "开启后自动化任务将在后台执行（无头模式）",
+            self.task_manager_group
+        )
+
+        # 添加开关按钮
+        self.browser_headless_switch = SwitchButton(self.browser_headless_card)
+
+        # 从配置文件读取初始值
+        config_manager = get_config_manager()
+        is_headless = config_manager.get('browser.headless', True)  # 默认隐藏
+        self.browser_headless_switch.setChecked(is_headless)
+
+        # 连接信号
+        self.browser_headless_switch.checkedChanged.connect(self.onBrowserHeadlessChanged)
+
+        self.browser_headless_card.hBoxLayout.addWidget(self.browser_headless_switch, 0, Qt.AlignRight)
+        self.browser_headless_card.hBoxLayout.addSpacing(16)
+
         # 添加到组
         self.task_manager_group.addSettingCard(self.thread_pool_card)
         self.task_manager_group.addSettingCard(self.poll_interval_card)
+        self.task_manager_group.addSettingCard(self.browser_headless_card)
         self.task_manager_group.addSettingCard(self.control_card)
 
         # 添加到布局
@@ -295,6 +319,32 @@ class SettingsInterface(ScrollArea):
             parent=self,
             position=InfoBarPosition.TOP
         )
+
+    def onBrowserHeadlessChanged(self, is_checked):
+        """浏览器窗口显示开关改变"""
+        try:
+            config_manager = get_config_manager()
+            config_manager.set('browser.headless', is_checked)
+
+            status_text = "隐藏" if is_checked else "显示"
+            log.info(f"浏览器窗口设置已更改为: {status_text}")
+
+            InfoBar.success(
+                title="设置已保存",
+                content=f"浏览器窗口将{status_text}",
+                parent=self,
+                position=InfoBarPosition.TOP,
+                duration=2000
+            )
+
+        except Exception as e:
+            log.error(f"保存浏览器窗口设置失败: {str(e)}")
+            InfoBar.error(
+                title="保存失败",
+                content=str(e),
+                parent=self,
+                position=InfoBarPosition.TOP
+            )
 
     def onRefreshLogInfo(self):
         """刷新日志信息"""

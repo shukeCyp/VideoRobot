@@ -4,7 +4,8 @@ from PyQt5.QtGui import QPixmap
 from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QTableWidgetItem, QHeaderView,
                               QLabel, QCheckBox, QApplication, QSizePolicy)
 from qfluentwidgets import (PrimaryPushButton, PushButton, TableWidget, ComboBox,
-                            FluentIcon as FIF, InfoBar, InfoBarPosition, BodyLabel, CheckBox)
+                            FluentIcon as FIF, InfoBar, InfoBarPosition, BodyLabel, CheckBox,
+                            Action, MessageBox, RoundMenu)
 from app.utils.logger import log
 from app.models.jimeng_image_task import JimengImageTask
 import os
@@ -58,6 +59,10 @@ class ImageGenView(QWidget):
         self.taskTable.setBorderVisible(True)
         self.taskTable.setBorderRadius(8)
         self.taskTable.setWordWrap(False)
+
+        # 启用右键菜单
+        self.taskTable.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.taskTable.customContextMenuRequested.connect(self.showContextMenu)
 
         # 设置表格列 - 列顺序：选择、ID、参考图片、模型、提示词、结果、状态
         self.taskTable.setColumnCount(7)
@@ -593,3 +598,138 @@ class ImageGenView(QWidget):
             duration=2000,
             position=InfoBarPosition.TOP
         )
+
+    def showContextMenu(self, pos):
+        """显示右键菜单"""
+        # 获取点击的行
+        item = self.taskTable.itemAt(pos)
+        if not item:
+            return
+
+        row = item.row()
+
+        # 获取该行的任务ID和状态
+        id_item = self.taskTable.item(row, 1)
+        status_item = self.taskTable.item(row, 6)
+
+        if not id_item or not status_item:
+            return
+
+        task_id = int(id_item.text())
+        status_text = status_item.text()
+
+        # 创建右键菜单 - 使用QFluentWidgets的RoundMenu
+        menu = RoundMenu(parent=self)
+
+        # 根据任务状态显示不同的菜单项
+        if status_text == '失败':
+            # 失败的任务可以重试和删除
+            retry_action = Action(FIF.SYNC, "重试", self)
+            retry_action.triggered.connect(lambda: self.onRetryTask(task_id))
+            menu.addAction(retry_action)
+
+            delete_action = Action(FIF.DELETE, "删除", self)
+            delete_action.triggered.connect(lambda: self.onDeleteTask(task_id))
+            menu.addAction(delete_action)
+        else:
+            # 其他状态只能删除
+            delete_action = Action(FIF.DELETE, "删除", self)
+            delete_action.triggered.connect(lambda: self.onDeleteTask(task_id))
+            menu.addAction(delete_action)
+
+        # 显示菜单
+        menu.exec(self.taskTable.viewport().mapToGlobal(pos))
+
+    def onRetryTask(self, task_id):
+        """重试任务"""
+        try:
+            log.info(f"重试任务 ID={task_id}")
+
+            # 获取任务
+            task = JimengImageTask.get_task_by_id(task_id)
+            if not task:
+                InfoBar.error(
+                    title="重试失败",
+                    content="任务不存在",
+                    parent=self,
+                    position=InfoBarPosition.TOP
+                )
+                return
+
+            # 重置任务状态为 pending
+            task.status = 'pending'
+            task.error_message = ''
+            # 清除之前的输出结果
+            task.output_image_1 = None
+            task.output_image_2 = None
+            task.output_image_3 = None
+            task.output_image_4 = None
+            task.save()
+
+            log.info(f"任务 ID={task_id} 已重置为等待状态")
+
+            InfoBar.success(
+                title="重试成功",
+                content=f"任务 #{task_id} 已重新添加到队列",
+                parent=self,
+                duration=2000,
+                position=InfoBarPosition.TOP
+            )
+
+            # 刷新列表
+            self.loadTasks()
+
+        except Exception as e:
+            log.error(f"重试任务失败: {e}")
+            InfoBar.error(
+                title="重试失败",
+                content=str(e),
+                parent=self,
+                position=InfoBarPosition.TOP
+            )
+
+    def onDeleteTask(self, task_id):
+        """删除任务"""
+        try:
+            # 弹出确认对话框
+            msg_box = MessageBox(
+                "确认删除",
+                f"确定要删除任务 #{task_id} 吗？",
+                self
+            )
+
+            if msg_box.exec():
+                log.info(f"删除任务 ID={task_id}")
+
+                # 删除任务
+                success = JimengImageTask.delete_task(task_id)
+
+                if success:
+                    log.info(f"任务 ID={task_id} 已删除")
+
+                    InfoBar.success(
+                        title="删除成功",
+                        content=f"任务 #{task_id} 已删除",
+                        parent=self,
+                        duration=2000,
+                        position=InfoBarPosition.TOP
+                    )
+
+                    # 刷新列表
+                    self.loadTasks()
+                else:
+                    InfoBar.error(
+                        title="删除失败",
+                        content="任务不存在",
+                        parent=self,
+                        position=InfoBarPosition.TOP
+                    )
+
+        except Exception as e:
+            log.error(f"删除任务失败: {e}")
+            InfoBar.error(
+                title="删除失败",
+                content=str(e),
+                parent=self,
+                position=InfoBarPosition.TOP
+            )

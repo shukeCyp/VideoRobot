@@ -8,6 +8,7 @@ from concurrent.futures import ThreadPoolExecutor
 from app.managers.base_task_executor import BaseTaskExecutor
 from app.models.jimeng_image_task import JimengImageTask
 from app.robot.jimeng.image_generator import JimengImageRobot
+from app.managers.account_allocator import get_account_allocator
 from app.utils.logger import log
 
 
@@ -44,6 +45,13 @@ class JimengImageTaskExecutor(BaseTaskExecutor):
             if task_list:
                 log.info(f"获取到 {len(task_list)} 个待执行的即梦图片任务")
 
+                # 为没有账号的任务自动分配账号
+                allocator = get_account_allocator()
+                for task in task_list:
+                    if not task.account_id:
+                        log.info(f"任务 ID={task.id} 未分配账号，开始自动分配...")
+                        allocator.allocate_and_assign(task)
+
             return task_list
 
         except Exception as e:
@@ -73,15 +81,31 @@ class JimengImageTaskExecutor(BaseTaskExecutor):
             # 使用 asyncio 运行异步任务
             result = asyncio.run(self._execute_async(task))
 
-            if result['success']:
-                # 更新任务状态为成功,并保存图片路径
-                JimengImageTask.update_task_outputs(task.id, result['images'])
-                log.info(f"任务 ID={task.id} 执行成功,生成了 {len(result['images'])} 张图片")
+            if result.is_success():
+                # 更新任务状态为成功,并保存图片路径和任务ID
+                result_data = result.data
+                JimengImageTask.update_task_outputs(task.id, result_data.get('image_urls', []))
+
+                # 更新即梦任务ID
+                if result_data.get('jimeng_task_id'):
+                    task.task_id = result_data['jimeng_task_id']
+                    task.save()
+
+                # 如果Cookie有更新，保存到账号
+                if result_data.get('cookies'):
+                    from app.models.jimeng_account import JimengAccount
+                    account = JimengAccount.get_account_by_id(task.account_id)
+                    if account:
+                        account.cookies = result_data['cookies']
+                        account.save()
+                        log.info(f"账号 ID={task.account_id} Cookie已更新")
+
+                log.info(f"任务 ID={task.id} 执行成功,生成了 {len(result_data.get('image_urls', []))} 张图片")
                 return True
             else:
                 # 更新任务状态为失败
-                self.update_task_status(task, 'failed', result['message'])
-                log.error(f"任务 ID={task.id} 执行失败: {result['message']}")
+                self.update_task_status(task, 'failed', result.message)
+                log.error(f"任务 ID={task.id} 执行失败: {result.message}")
                 return False
 
         except Exception as e:
@@ -98,7 +122,7 @@ class JimengImageTaskExecutor(BaseTaskExecutor):
             task: JimengImageTask任务对象
 
         Returns:
-            dict: 执行结果
+            RobotBaseResult: 执行结果
         """
         robot = None
 
@@ -108,45 +132,61 @@ class JimengImageTaskExecutor(BaseTaskExecutor):
 
             # 初始化
             if not await robot.init():
-                return {
-                    'success': False,
-                    'message': '初始化机器人失败',
-                    'images': []
-                }
+                from app.robot.robot_base_result import RobotBaseResult
+                from app.robot.jimeng.jimeng_image_result import JimengImageResultData
+                result_data = JimengImageResultData()
+                return RobotBaseResult.error(
+                    message='初始化机器人失败',
+                    data=result_data.to_dict()
+                )
 
-            # 启动浏览器(使用无头模式提高效率)
-            if not await robot.launch_browser(headless=True):
-                return {
-                    'success': False,
-                    'message': '启动浏览器失败',
-                    'images': []
-                }
+            # 从配置读取浏览器窗口设置
+            from app.utils.config_manager import get_config_manager
+            config_manager = get_config_manager()
+            is_headless = config_manager.get('browser.headless', True)  # 默认隐藏窗口
+
+            log.info(f"浏览器窗口模式: {'隐藏' if is_headless else '显示'}")
+
+            # 启动浏览器
+            if not await robot.launch_browser(headless=is_headless):
+                from app.robot.robot_base_result import RobotBaseResult
+                from app.robot.jimeng.jimeng_image_result import JimengImageResultData
+                result_data = JimengImageResultData()
+                return RobotBaseResult.error(
+                    message='启动浏览器失败',
+                    data=result_data.to_dict()
+                )
 
             # 打开即梦页面
             if not await robot.navigate_to_image_gen():
-                return {
-                    'success': False,
-                    'message': '打开页面失败,可能Cookie已失效',
-                    'images': []
-                }
+                from app.robot.robot_base_result import RobotBaseResult
+                from app.robot.jimeng.jimeng_image_result import JimengImageResultData
+                result_data = JimengImageResultData()
+                return RobotBaseResult.error(
+                    message='打开页面失败,可能Cookie已失效',
+                    data=result_data.to_dict()
+                )
 
             # 执行图片生成
             result = await robot.generate_image(
                 prompt=task.prompt,
                 image_model=task.image_model,
                 aspect_ratio=task.aspect_ratio,
-                resolution=task.resolution
+                resolution=task.resolution,
+                input_image_paths=task.get_input_image_paths()  # 添加参考图片路径
             )
 
             return result
 
         except Exception as e:
             log.error(f"异步执行任务失败: {str(e)}")
-            return {
-                'success': False,
-                'message': str(e),
-                'images': []
-            }
+            from app.robot.robot_base_result import RobotBaseResult
+            from app.robot.jimeng.jimeng_image_result import JimengImageResultData
+            result_data = JimengImageResultData()
+            return RobotBaseResult.error(
+                message=str(e),
+                data=result_data.to_dict()
+            )
 
         finally:
             # 确保关闭浏览器

@@ -13,8 +13,16 @@
             <span class="logo-slogan">用科技让复杂的世界更简单</span>
           </div>
           <div class="header-actions">
-            <el-button 
-              text 
+            <el-button
+              text
+              @click="openApiDocs"
+              style="color: white; margin-right: 12px;"
+            >
+              <el-icon><Document /></el-icon>
+              API文档
+            </el-button>
+            <el-button
+              text
               @click="checkHealth"
               :loading="healthChecking"
               style="color: white;"
@@ -428,7 +436,8 @@ import {
   Check,
   Star,
   Close,
-  ChatDotRound
+  ChatDotRound,
+  Document
 } from '@element-plus/icons-vue'
 import AccountConfiguration from './views/AccountConfiguration.vue'
 import JimengPlatform from './views/JimengPlatform.vue'
@@ -474,7 +483,8 @@ export default {
     Setting,
     Monitor,
     Collection,
-    VideoCamera
+    VideoCamera,
+    Document
   },
   setup() {
     const activeMenu = ref('home')
@@ -528,6 +538,13 @@ export default {
       } finally {
         healthChecking.value = false
       }
+    }
+
+    // 打开API文档
+    const openApiDocs = () => {
+      // 打开后端API文档页面
+      window.open('http://localhost:8888/api-docs', '_blank')
+      ElMessage.success('正在打开API文档页面')
     }
 
     // 联系我们
@@ -616,6 +633,7 @@ export default {
       currentTool,
       handleMenuSelect,
       checkHealth,
+      openApiDocs,
       contactUs,
       copyContactInfo,
       openSponsorLink,

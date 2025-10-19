@@ -32,6 +32,7 @@ from backend.api.v1.qingying_img2video_routes import qingying_img2video_bp
 from backend.api.v1.config_routes import config_bp
 from backend.api.v1.task_manager_routes import task_manager_bp
 from backend.api.v1.prompt_routes import prompt_bp
+from backend.api.v1.api_docs_routes import api_docs_bp
 
 # 创建Flask应用
 app = Flask(__name__)
@@ -152,6 +153,7 @@ app.register_blueprint(qingying_img2video_bp)
 app.register_blueprint(config_bp)
 app.register_blueprint(task_manager_bp)
 app.register_blueprint(prompt_bp)
+app.register_blueprint(api_docs_bp)  # 注册API文档路由
 
 # 等待路由注册完成
 time.sleep(0.5)
@@ -168,9 +170,16 @@ if __name__ == '__main__':
     print("VideoRobot后端服务启动中...")
     print("数据库连接成功")
     print("API服务运行在: http://localhost:8888")
-    print("可用路由:")
+    print("API文档地址: http://localhost:8888/api-docs")
+    print("=" * 50)
+    print("主要API端点:")
+    print("  健康检查: http://localhost:8888/api/health")
+    print("  API文档: http://localhost:8888/api-docs")
+    print("=" * 50)
+    print("所有可用路由:")
     for rule in app.url_map.iter_rules():
-        if rule.endpoint != 'static':
+        if rule.endpoint != 'static' and 'api-docs' not in rule.rule:
             methods = ','.join(rule.methods - {'HEAD', 'OPTIONS'})
             print("  {} [{}]".format(rule.rule, methods))
+    print("=" * 50)
     app.run(debug=False, host='0.0.0.0', port=8888)

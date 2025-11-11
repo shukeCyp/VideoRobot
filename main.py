@@ -21,6 +21,7 @@ from PyQt5.QtWidgets import QApplication
 from qfluentwidgets import FluentIcon as FIF, NavigationItemPosition, MSFluentWindow, setTheme, Theme
 from app.view.home_interface import HomeInterface
 from app.view.jimeng_interface import JiMengInterface
+from app.view.jimeng_intl_interface import JiMengIntlInterface
 from app.view.keling_interface import KeLingInterface
 from app.view.qingying_interface import QingYingInterface
 from app.view.vidu_interface import ViduInterface
@@ -103,6 +104,7 @@ class VideoRobotWindow(MSFluentWindow):
         # 创建页面实例
         self.homeInterface = HomeInterface(self)
         self.jimengInterface = JiMengInterface(self)
+        self.jimengIntlInterface = JiMengIntlInterface(self)
         self.kelingInterface = KeLingInterface(self)
         self.qingyingInterface = QingYingInterface(self)
         self.viduInterface = ViduInterface(self)
@@ -120,6 +122,8 @@ class VideoRobotWindow(MSFluentWindow):
         else:
             jimeng_icon = FIF.VIDEO
         self.addSubInterface(self.jimengInterface, jimeng_icon, "即梦")
+        # 即梦国际版 - 复用即梦图标
+        self.addSubInterface(self.jimengIntlInterface, jimeng_icon, "即梦国际版")
 
         # 可灵图标
         keling_icon_path = os.path.join(project_root, "app", "assets", "keling_icon.png")

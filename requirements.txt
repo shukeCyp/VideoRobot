@@ -1,0 +1,8 @@
+PyQt5
+PyQt-Fluent-Widgets
+requests
+peewee
+loguru
+playwright
+pandas
+openpyxl

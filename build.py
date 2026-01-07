@@ -50,24 +50,46 @@ def main():
         print("✓ 已清理 dist 目录")
 
     # 构建 PyInstaller 命令
-    pyinstaller_cmd = [
-        'pyinstaller',
-        '--onefile',           # 单文件模式
-        '--windowed',          # 不显示控制台窗口
-        '--name', 'VideoRobot',
-        '--icon', 'icon.png',
-        '--add-data', f'icon.png{os.pathsep}.',
-        '--add-data', f'group_qrcode.png{os.pathsep}.',
-        '--add-data', f'vx_qrcode.png{os.pathsep}.',
-        '--add-data', f'app{os.pathsep}app',
-        '--hidden-import=PyQt5',
-        '--hidden-import=qfluentwidgets',
-        '--hidden-import=peewee',
-        '--hidden-import=requests',
-        '--hidden-import=Crypto',
-        '--hidden-import=PIL',
-        'main.py'
-    ]
+    if platform.system() == 'Darwin':  # macOS
+        # macOS 使用 onedir 模式避免兼容性问题
+        pyinstaller_cmd = [
+            'pyinstaller',
+            '--onedir',            # macOS 使用目录模式
+            '--windowed',          # 不显示控制台窗口
+            '--name', 'VideoRobot',
+            '--icon', 'icon.png',
+            '--add-data', f'icon.png{os.pathsep}.',
+            '--add-data', f'group_qrcode.png{os.pathsep}.',
+            '--add-data', f'vx_qrcode.png{os.pathsep}.',
+            '--add-data', f'app{os.pathsep}app',
+            '--hidden-import=PyQt5',
+            '--hidden-import=qfluentwidgets',
+            '--hidden-import=peewee',
+            '--hidden-import=requests',
+            '--hidden-import=Crypto',
+            '--hidden-import=PIL',
+            'main.py'
+        ]
+    else:  # Windows 和 Linux
+        # Windows 和 Linux 使用 onefile 模式
+        pyinstaller_cmd = [
+            'pyinstaller',
+            '--onefile',           # 单文件模式
+            '--windowed',          # 不显示控制台窗口
+            '--name', 'VideoRobot',
+            '--icon', 'icon.png',
+            '--add-data', f'icon.png{os.pathsep}.',
+            '--add-data', f'group_qrcode.png{os.pathsep}.',
+            '--add-data', f'vx_qrcode.png{os.pathsep}.',
+            '--add-data', f'app{os.pathsep}app',
+            '--hidden-import=PyQt5',
+            '--hidden-import=qfluentwidgets',
+            '--hidden-import=peewee',
+            '--hidden-import=requests',
+            '--hidden-import=Crypto',
+            '--hidden-import=PIL',
+            'main.py'
+        ]
 
     print("\n开始打包...")
     print(" ".join(pyinstaller_cmd))

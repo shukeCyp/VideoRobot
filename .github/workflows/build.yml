@@ -24,15 +24,29 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
+          pip install pillow
           pip install -r requirements.txt
           pip install pyinstaller
+
+      - name: Convert icon for Windows
+        run: |
+          python -c "
+          from PIL import Image
+          import os
+          if os.path.exists('icon.png'):
+              img = Image.open('icon.png')
+              img.save('icon.ico', format='ICO', sizes=[(256, 256), (128, 128), (64, 64), (32, 32), (16, 16)])
+              print('Icon converted to ICO format')
+          else:
+              print('icon.png not found')
+          "
 
       - name: Build with PyInstaller
         run: |
           pyinstaller --onefile `
             --windowed `
             --name "VideoRobot" `
-            --icon=icon.png `
+            --icon=icon.ico `
             --add-data "icon.png:." `
             --add-data "group_qrcode.png:." `
             --add-data "vx_qrcode.png:." `
@@ -63,12 +77,25 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
+          pip install pillow
           pip install -r requirements.txt
           pip install pyinstaller
 
-      - name: Build with PyInstaller
+      - name: Convert icon for macOS
         run: |
-          pyinstaller --onefile \
+          python -c "
+          from PIL import Image
+          import os
+          if os.path.exists('icon.png'):
+              # macOS 可以直接使用 PNG，但我们确保 Pillow 可用
+              print('Icon ready for macOS')
+          else:
+              print('icon.png not found')
+          "
+
+      - name: Build with PyInstaller (onedir for macOS)
+        run: |
+          pyinstaller --onedir \
             --windowed \
             --name "VideoRobot" \
             --icon=icon.png \
@@ -84,9 +111,14 @@ jobs:
 
       - name: Create macOS DMG
         run: |
+          # 创建 DMG 目录结构
           mkdir -p dist/dmg
           cp -r dist/VideoRobot.app dist/dmg/
-          cp -r dist/VideoRobot.app /tmp/VideoRobot.app
+
+          # 创建 Applications 链接
+          ln -s /Applications dist/dmg/Applications
+
+          # 创建 DMG
           hdiutil create -volname "VideoRobot" \
             -srcfolder dist/dmg \
             -ov -format UDZO \

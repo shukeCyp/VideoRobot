@@ -182,9 +182,6 @@ $RECYCLE.BIN/
 *.sqlite
 *.sqlite3
 
-# Playwright browsers
-.playwright/
-
 # Logs
 logs/
 *.log

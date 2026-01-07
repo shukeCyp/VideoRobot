@@ -1,12 +1,14 @@
 # -*- coding: utf-8 -*-
-from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QPixmap
-from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QTableWidgetItem, QHeaderView, QLabel, QApplication, QFileDialog, QTableWidget, QAbstractItemView, QStackedWidget
-from qfluentwidgets import PrimaryPushButton, PushButton, TableWidget, ComboBox, FluentIcon as FIF, InfoBar, InfoBarPosition, Dialog, TextEdit, BodyLabel, CheckBox, Action, RoundMenu, MessageBox, LineEdit, Pivot
+from PyQt5.QtCore import Qt, QThread, pyqtSignal
+from PyQt5.QtGui import QPixmap, QColor
+from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QTableWidgetItem, QHeaderView, QLabel, QApplication, QFileDialog, QTableWidget, QAbstractItemView, QStackedWidget, QScrollArea, QGridLayout
+from datetime import datetime
+from qfluentwidgets import PrimaryPushButton, PushButton, TableWidget, ComboBox, FluentIcon as FIF, InfoBar, InfoBarPosition, Dialog, TextEdit, BodyLabel, CheckBox, Action, RoundMenu, MessageBox, LineEdit, Pivot, ProgressBar
 from app.models.jimeng_intl_image_task import JimengIntlImageTask
 from app.view.jimeng.add_image_task_dialog import MultiImageDropWidget
 from app.utils.logger import log
 import os
+import requests
 from app.constants import JIMENG_INTL_IMAGE_MODE_MAP
 
 
@@ -17,51 +19,58 @@ class AddImageTaskIntlDialog(Dialog):
         self.titleLabel.setVisible(False)
         content = QWidget(self)
         layout = QVBoxLayout(content)
-        layout.setContentsMargins(30, 10, 30, 16)
+        layout.setContentsMargins(30, 5, 30, 10)
         layout.setSpacing(15)
+
+        # 模型选择（单独一行，在最上面）
         model_layout = QHBoxLayout()
-        model_layout.setContentsMargins(0, 0, 0, 0)
-        model_label = BodyLabel("模型", content)
+        model_label = BodyLabel("图片模型 *", content)
         model_layout.addWidget(model_label)
         self.model_combo = ComboBox(content)
-        self.model_combo.addItems(list(JIMENG_INTL_IMAGE_MODE_MAP.keys()))
-        if 'Image 3.1' in JIMENG_INTL_IMAGE_MODE_MAP.keys():
-            self.model_combo.setCurrentText('Image 3.1')
+        self.model_combo.addItems(['nanobananapro', 'nanobanana', 'jimeng-4.5', 'jimeng-4.1', 'jimeng-4.0', 'jimeng-3.0'])
+        self.model_combo.setCurrentText('jimeng-4.5')
         self.model_combo.setFixedWidth(180)
         model_layout.addWidget(self.model_combo)
         model_layout.addStretch()
         layout.addLayout(model_layout)
-        prompt_label = BodyLabel("提示词", content)
+
+        # 提示词
+        prompt_label = BodyLabel("提示词 *", content)
         layout.addWidget(prompt_label)
         self.prompt_edit = TextEdit(content)
-        self.prompt_edit.setPlaceholderText("请输入图片生成的提示词...")
+        self.prompt_edit.setPlaceholderText("请输入图片生成的提示词描述...")
         self.prompt_edit.setFixedHeight(80)
         layout.addWidget(self.prompt_edit)
+
+        # 参考图片
         image_label = BodyLabel("参考图片（可选）", content)
         self.image_widget = MultiImageDropWidget(content)
         layout.addWidget(image_label)
         layout.addWidget(self.image_widget)
-        layout.addSpacing(8)
 
+        # 分辨率比例和清晰度（同一行，在下面）
         settings_layout = QHBoxLayout()
-        settings_layout.setContentsMargins(0, 8, 0, 0)
-        ratio_label = BodyLabel("分辨率比例", content)
+        ratio_label = BodyLabel("分辨率比例 *", content)
         settings_layout.addWidget(ratio_label)
         self.ratio_combo = ComboBox(content)
-        self.ratio_combo.setFixedWidth(160)
+        self.ratio_combo.addItems(['1:1', '4:3', '3:4', '16:9', '9:16', '3:2', '2:3', '21:9'])
+        self.ratio_combo.setCurrentText('1:1')
+        self.ratio_combo.setFixedWidth(120)
         settings_layout.addWidget(self.ratio_combo)
+
         settings_layout.addSpacing(30)
-        quality_label = BodyLabel("清晰度", content)
+        quality_label = BodyLabel("清晰度 *", content)
         settings_layout.addWidget(quality_label)
-        self.quality_combo = ComboBox(content)
-        self.quality_combo.setFixedWidth(160)
-        settings_layout.addWidget(self.quality_combo)
+        self.resolution_combo = ComboBox(content)
+        self.resolution_combo.addItems(['1k', '2k', '4k'])
+        self.resolution_combo.setCurrentText('2k')
+        self.resolution_combo.setFixedWidth(120)
+        settings_layout.addWidget(self.resolution_combo)
+
         settings_layout.addStretch()
         layout.addLayout(settings_layout)
 
         self.textLayout.addWidget(content)
-        self.model_combo.currentTextChanged.connect(self.onModelChanged)
-        self.onModelChanged(self.model_combo.currentText())
         self.yesButton.setText("添加")
         self.cancelButton.setText("取消")
         self.yesButton.clicked.connect(self.on_add_task)
@@ -75,14 +84,15 @@ class AddImageTaskIntlDialog(Dialog):
             return
         image_paths = self.image_widget.get_image_paths()
         try:
-            ratio_val = self.ratio_combo.currentText() if self.ratio_combo.isEnabled() else ""
-            quality_val = self.quality_combo.currentText() if self.quality_combo.isEnabled() else ""
+            ratio_val = self.ratio_combo.currentText()
+            model_val = self.model_combo.currentText()
+            resolution_val = self.resolution_combo.currentText()
             JimengIntlImageTask.create_task(
                 prompt=prompt,
                 account_id=None,
-                model=self.model_combo.currentText(),
                 ratio=ratio_val,
-                quality=quality_val,
+                model=model_val,
+                resolution=resolution_val,
                 input_images=image_paths
             )
             InfoBar.success(title="添加成功", content="任务已添加", parent=self, duration=2000, position=InfoBarPosition.TOP)
@@ -93,44 +103,6 @@ class AddImageTaskIntlDialog(Dialog):
 
     def onImagesChanged(self, paths):
         self.resize(self.width(), self.sizeHint().height())
-
-    def onModelChanged(self, model):
-        cfg = JIMENG_INTL_IMAGE_MODE_MAP.get(model, {})
-        ratio_map = cfg.get('ratio', {})
-        quality_map = cfg.get('quality', {})
-        count = cfg.get('images', 0)
-
-        # 更新比例
-        self.ratio_combo.clear()
-        if ratio_map:
-            values = list(ratio_map.values())
-            self.ratio_combo.addItems(values)
-            self.ratio_combo.setEnabled(True)
-            if '1:1' in values:
-                self.ratio_combo.setCurrentText('1:1')
-            else:
-                self.ratio_combo.setCurrentIndex(0)
-        else:
-            self.ratio_combo.addItems(['-'])
-            self.ratio_combo.setEnabled(False)
-
-        # 更新清晰度
-        self.quality_combo.clear()
-        if quality_map:
-            values = list(quality_map.values())
-            self.quality_combo.addItems(values)
-            self.quality_combo.setEnabled(True)
-            self.quality_combo.setCurrentIndex(0)
-        else:
-            self.quality_combo.addItems(['-'])
-            self.quality_combo.setEnabled(False)
-
-        # 更新参考图片支持
-        if count and count > 0:
-            self.image_widget.set_enabled(True)
-            self.image_widget.set_max_images(count)
-        else:
-            self.image_widget.set_enabled(False)
 
 
 class ImageGenIntlView(QWidget):
@@ -167,20 +139,20 @@ class ImageGenIntlView(QWidget):
         self.table.setBorderVisible(True)
         self.table.setBorderRadius(8)
         self.table.setWordWrap(False)
-        self.table.setColumnCount(7)
-        self.table.setHorizontalHeaderLabels(["", "ID", "参考图片", "模型", "提示词", "结果", "状态"])
+        self.table.setColumnCount(6)
+        self.table.setHorizontalHeaderLabels(["", "ID", "参考图片", "提示词", "状态", "操作"])
         header = self.table.horizontalHeader()
         header.setSectionResizeMode(0, QHeaderView.Fixed)
-        header.setSectionResizeMode(1, QHeaderView.Interactive)
-        header.setSectionResizeMode(2, QHeaderView.Interactive)
-        header.setSectionResizeMode(3, QHeaderView.Interactive)
-        header.setSectionResizeMode(4, QHeaderView.Stretch)
-        header.setSectionResizeMode(5, QHeaderView.Interactive)
-        header.setSectionResizeMode(6, QHeaderView.Interactive)
+        header.setSectionResizeMode(1, QHeaderView.Fixed)
+        header.setSectionResizeMode(2, QHeaderView.Fixed)
+        header.setSectionResizeMode(3, QHeaderView.Stretch)
+        header.setSectionResizeMode(4, QHeaderView.Fixed)
+        header.setSectionResizeMode(5, QHeaderView.Fixed)
         self.table.verticalHeader().setVisible(False)
         self.table.verticalHeader().setDefaultSectionSize(100)
         self.table.setSelectionBehavior(TableWidget.SelectRows)
         self.table.setSelectionMode(TableWidget.ExtendedSelection)
+        self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.table.setContextMenuPolicy(Qt.CustomContextMenu)
         self.table.customContextMenuRequested.connect(self.showContextMenu)
         layout.addWidget(self.table)
@@ -205,14 +177,12 @@ class ImageGenIntlView(QWidget):
         bottom.addWidget(self.nextPageBtn)
         layout.addLayout(bottom)
         self.loadTasks()
-        # 初始列宽（参照国内版风格）：图片160，状态100，提示词自适应
-        base_unit = 80
+        # 初始列宽
         self.table.setColumnWidth(0, 50)
-        self.table.setColumnWidth(1, base_unit * 1)
-        self.table.setColumnWidth(2, base_unit * 2)
-        self.table.setColumnWidth(3, base_unit * 2)
-        self.table.setColumnWidth(5, base_unit * 2)
-        self.table.setColumnWidth(6, base_unit * 2)
+        self.table.setColumnWidth(1, 60)
+        self.table.setColumnWidth(2, 120)
+        self.table.setColumnWidth(4, 120)
+        self.table.setColumnWidth(5, 220)
 
     def loadTasks(self):
         try:
@@ -268,44 +238,46 @@ class ImageGenIntlView(QWidget):
                     item_img.setTextAlignment(Qt.AlignCenter)
                     self.table.setItem(row, 2, item_img)
                     self.table.setRowHeight(row, 100)
-                model_item = QTableWidgetItem(task.model or "-")
-                model_item.setTextAlignment(Qt.AlignCenter)
-                self.table.setItem(row, 3, model_item)
 
                 pt = task.prompt or ""
                 short = pt[:50] + ("..." if len(pt) > 50 else "")
                 item_prompt = QTableWidgetItem(short)
                 item_prompt.setToolTip(pt)
                 item_prompt.setTextAlignment(Qt.AlignCenter)
-                self.table.setItem(row, 4, item_prompt)
-
-                outputs = task.get_output_images()
-                if outputs:
-                    op = outputs[0]
-                    op2 = op
-                    if op2.lower().startswith("file:///"):
-                        op2 = op2[8:].replace('/', '\\')
-                    if os.path.exists(op2):
-                        res_label = QLabel()
-                        pixmap2 = QPixmap(op2)
-                        scaled2 = pixmap2.scaled(80, 80, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-                        res_label.setPixmap(scaled2)
-                        res_label.setAlignment(Qt.AlignCenter)
-                        self.table.setCellWidget(row, 5, res_label)
-                    else:
-                        no_res = QTableWidgetItem("文件不存在")
-                        no_res.setTextAlignment(Qt.AlignCenter)
-                        self.table.setItem(row, 5, no_res)
-                else:
-                    no_res = QTableWidgetItem("无结果")
-                    no_res.setTextAlignment(Qt.AlignCenter)
-                    self.table.setItem(row, 5, no_res)
+                self.table.setItem(row, 3, item_prompt)
 
                 status_map = {0: "排队中", 1: "生成中", 2: "已完成", 3: "失败"}
-                item_status = QTableWidgetItem(status_map.get(task.status, "-") )
+                item_status = QTableWidgetItem(status_map.get(task.status, "-"))
                 item_status.setData(Qt.UserRole, task.id)
                 item_status.setTextAlignment(Qt.AlignCenter)
-                self.table.setItem(row, 6, item_status)
+
+                # 根据状态设置文字颜色
+                if task.status == 2:  # 已完成
+                    item_status.setForeground(QColor("#34C759"))  # 绿色
+                elif task.status == 3:  # 失败
+                    item_status.setForeground(QColor("#FF3B30"))  # 红色
+
+                self.table.setItem(row, 4, item_status)
+
+                # 操作按钮
+                action_container = QWidget(self.table)
+                action_container.setFixedHeight(self.table.rowHeight(row))
+                action_layout = QHBoxLayout(action_container)
+                action_layout.setContentsMargins(0, 0, 0, 0)
+                action_layout.setSpacing(5)
+                action_layout.setAlignment(Qt.AlignCenter)
+
+                download_btn = PushButton("下载", action_container)
+                download_btn.setFixedWidth(60)
+                download_btn.clicked.connect(lambda checked, tid=task.id: self.onDownloadTask(tid))
+                action_layout.addWidget(download_btn)
+
+                retry_btn = PushButton("重试", action_container)
+                retry_btn.setFixedWidth(60)
+                retry_btn.clicked.connect(lambda checked, tid=task.id: self.onRetryTask(tid))
+                action_layout.addWidget(retry_btn)
+
+                self.table.setCellWidget(row, 5, action_container)
 
                 # 已设置选择列居中，不重复创建容器
             total_pages = (total_count + self.page_size - 1) // self.page_size if total_count > 0 else 1
@@ -325,6 +297,211 @@ class ImageGenIntlView(QWidget):
     def onRefresh(self):
         self.loadTasks()
         InfoBar.success(title="刷新成功", content="任务列表已更新", parent=self, duration=2000, position=InfoBarPosition.TOP)
+
+    def showDownloadMessage(self, task_id: int):
+        """显示下载提示信息"""
+        InfoBar.info(
+            title="下载提示",
+            content="请在右上角的【下载】按钮处勾选此任务，然后使用批量下载功能",
+            parent=self,
+            position=InfoBarPosition.TOP,
+            duration=3000
+        )
+
+    def onDownloadTask(self, task_id: int):
+        """下载单个任务生成的图片"""
+        try:
+            from datetime import datetime
+
+            task = JimengIntlImageTask.get_task_by_id(task_id)
+            if not task:
+                InfoBar.error(title="错误", content="任务不存在", parent=self, position=InfoBarPosition.TOP)
+                return
+
+            outputs = task.get_output_images()
+            if not outputs:
+                InfoBar.warning(title="提示", content="该任务还未生成图片", parent=self, position=InfoBarPosition.TOP)
+                return
+
+            # 选择保存目录
+            save_dir = QFileDialog.getExistingDirectory(self, "选择保存目录")
+            if not save_dir:
+                return
+
+            from app.utils.logger import log
+            from PyQt5.QtCore import QObject, pyqtSignal
+            import shutil
+
+            # 创建带日期的文件夹
+            date_str = datetime.now().strftime("%Y%m%d%H%M%S")
+            download_folder = os.path.join(save_dir, f"即梦_图片_{date_str}")
+
+            log.info(f"开始下载任务 {task_id} 的图片，保存到: {download_folder}")
+
+            # 创建下载进度对话框
+            loading_dlg = Dialog("", "", self)
+            loading_dlg.setFixedWidth(400)
+            loading_dlg.setFixedHeight(150)
+            loading_dlg.yesButton.setVisible(False)
+            loading_dlg.cancelButton.setVisible(False)
+            loading_dlg.titleLabel.setVisible(False)
+
+            main_widget = QWidget(loading_dlg)
+            dlg_layout = QVBoxLayout(main_widget)
+            dlg_layout.setContentsMargins(24, 20, 24, 20)
+            dlg_layout.setSpacing(12)
+
+            title_label = BodyLabel("正在下载图片", main_widget)
+            title_label.setStyleSheet("font-size: 15px; font-weight: bold;")
+            dlg_layout.addWidget(title_label)
+
+            status_label = BodyLabel("初始化中...", main_widget)
+            status_label.setStyleSheet("font-size: 12px; color: rgba(255, 255, 255, 0.65);")
+            dlg_layout.addWidget(status_label)
+
+            progress_container = QWidget(main_widget)
+            progress_layout = QHBoxLayout(progress_container)
+            progress_layout.setContentsMargins(0, 0, 0, 0)
+            progress_layout.setSpacing(10)
+
+            progress_bar = ProgressBar(progress_container)
+            progress_bar.setRange(0, len(outputs))
+            progress_bar.setFixedHeight(5)
+            progress_layout.addWidget(progress_bar, 1)
+
+            progress_text = BodyLabel("0%", progress_container)
+            progress_text.setStyleSheet("font-size: 11px; color: rgba(255, 255, 255, 0.6); min-width: 30px;")
+            progress_text.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            progress_layout.addWidget(progress_text)
+
+            dlg_layout.addWidget(progress_container)
+            loading_dlg.textLayout.addWidget(main_widget)
+
+            # 创建信号发射器，用于跨线程通信
+            class DownloadSignal(QObject):
+                progress = pyqtSignal(int, int)
+                finished = pyqtSignal(bool, str)
+
+            signal_emitter = DownloadSignal()
+
+            def on_progress_update(current, total):
+                """进度更新回调（在主线程执行）"""
+                status_label.setText(f"已下载 {current}/{total} 张图片")
+                progress_bar.setValue(current)
+                percentage = int((current / total * 100)) if total > 0 else 0
+                progress_text.setText(f"{percentage}%")
+
+            def on_download_finished(success, message):
+                """下载完成回调（在主线程执行）"""
+                loading_dlg.close()
+                if success:
+                    InfoBar.success(title="下载完成", content=message, parent=self, duration=3000, position=InfoBarPosition.TOP)
+                    log.info(f"任务 {task_id} 图片下载完成: {message}")
+                else:
+                    InfoBar.error(title="下载失败", content=message, parent=self, position=InfoBarPosition.TOP)
+
+            def download_task_images():
+                """在子线程中下载任务图片"""
+                success_count = 0
+                fail_count = 0
+
+                try:
+                    # 创建目标文件夹，文件夹名为 task_{task_id}
+                    folder = os.path.join(download_folder, f"task_{task_id}")
+                    os.makedirs(folder, exist_ok=True)
+
+                    for idx, image_url in enumerate(outputs):
+                        try:
+                            signal_emitter.progress.emit(idx, len(outputs))
+
+                            # 检查是否是 URL
+                            if image_url.startswith("http://") or image_url.startswith("https://"):
+                                # 网络下载
+                                import requests
+                                response = requests.get(image_url, timeout=60)
+                                response.raise_for_status()
+
+                                # 从 URL 提取文件名
+                                fname = os.path.basename(image_url.split('?')[0])
+                                if not fname.endswith(('.jpg', '.jpeg', '.png', '.gif')):
+                                    fname = f"image_{idx + 1}.jpeg"
+
+                                filepath = os.path.join(folder, fname)
+                                with open(filepath, 'wb') as f:
+                                    f.write(response.content)
+                                success_count += 1
+                                log.debug(f"图片 {idx + 1} 下载成功: {filepath}")
+                            else:
+                                # 本地文件
+                                if image_url.lower().startswith("file:///"):
+                                    p = image_url[8:].replace('/', '\\')
+                                else:
+                                    p = image_url
+
+                                if os.path.exists(p):
+                                    fname = os.path.basename(p)
+                                    shutil.copy2(p, os.path.join(folder, fname))
+                                    success_count += 1
+                                    log.debug(f"图片 {idx + 1} 下载成功: {fname}")
+                                else:
+                                    fail_count += 1
+                                    log.warning(f"图片 {idx + 1} 文件不存在: {p}")
+
+                        except Exception as e:
+                            log.error(f"下载图片 {idx + 1} 失败: {e}")
+                            fail_count += 1
+
+                    signal_emitter.progress.emit(len(outputs), len(outputs))
+
+                    if success_count > 0:
+                        msg = f"成功下载 {success_count} 张图片"
+                        if fail_count > 0:
+                            msg += f"，{fail_count} 张失败"
+                        signal_emitter.finished.emit(True, msg)
+                    else:
+                        signal_emitter.finished.emit(False, "未找到任何图片文件")
+
+                except Exception as e:
+                    log.error(f"下载任务 {task_id} 失败: {e}")
+                    signal_emitter.finished.emit(False, str(e))
+
+            # 连接信号到主线程的槽函数
+            signal_emitter.progress.connect(on_progress_update)
+            signal_emitter.finished.connect(on_download_finished)
+
+            # 在子线程中执行下载
+            download_thread = QThread()
+            download_thread.run = download_task_images
+            download_thread.start()
+
+            loading_dlg.exec()
+
+        except Exception as e:
+            log.error(f"下载任务图片失败: {e}")
+            InfoBar.error(title="下载失败", content=str(e), parent=self, position=InfoBarPosition.TOP)
+
+    def onRetryTask(self, task_id: int):
+        """重新执行任务"""
+        try:
+            task = JimengIntlImageTask.get_task_by_id(task_id)
+            if not task:
+                InfoBar.error(title="错误", content="任务不存在", parent=self, position=InfoBarPosition.TOP)
+                return
+
+            # 重置任务状态为排队中
+            task.status = 0
+            task.code = None
+            task.message = None
+            task.update_at = datetime.now()
+            task.save()
+
+            log.info(f"任务 {task_id} 已重置为排队状态")
+            self.loadTasks()
+            InfoBar.success(title="重试成功", content="任务已重新加入队列", parent=self, duration=2000, position=InfoBarPosition.TOP)
+
+        except Exception as e:
+            log.error(f"重新执行任务失败: {e}")
+            InfoBar.error(title="重试失败", content=str(e), parent=self, position=InfoBarPosition.TOP)
 
     def onPageSizeChanged(self, size):
         self.page_size = int(size)
@@ -362,7 +539,7 @@ class ImageGenIntlView(QWidget):
             if container:
                 cb = container.findChild(CheckBox)
                 if cb and cb.isChecked():
-                    status_item = self.table.item(row, 6)
+                    status_item = self.table.item(row, 4)
                     if status_item:
                         task_id = status_item.data(Qt.UserRole)
                         if task_id:
@@ -374,65 +551,169 @@ class ImageGenIntlView(QWidget):
         if not selected_ids:
             InfoBar.warning(title="提示", content="请先勾选要下载的任务", parent=self, position=InfoBarPosition.TOP)
             return
-        from PyQt5.QtWidgets import QFileDialog
+
         download_dir = QFileDialog.getExistingDirectory(self, "选择下载目录", "", QFileDialog.ShowDirsOnly)
         if not download_dir:
             return
-        from PyQt5.QtCore import QThread, pyqtSignal
+
+        from app.utils.logger import log
+        from PyQt5.QtCore import QObject, pyqtSignal
+        from datetime import datetime
         import shutil
 
-        class DownloadThread(QThread):
-            progress = pyqtSignal(int, int, str)
+        # 创建带日期的文件夹
+        date_str = datetime.now().strftime("%Y%m%d%H%M%S")
+        download_folder = os.path.join(download_dir, f"即梦_图片_{date_str}")
+
+        # 创建下载进度对话框
+        loading_dlg = Dialog("", "", self)
+        loading_dlg.setFixedWidth(400)
+        loading_dlg.setFixedHeight(150)
+        loading_dlg.yesButton.setVisible(False)
+        loading_dlg.cancelButton.setVisible(False)
+        loading_dlg.titleLabel.setVisible(False)
+
+        main_widget = QWidget(loading_dlg)
+        dlg_layout = QVBoxLayout(main_widget)
+        dlg_layout.setContentsMargins(24, 20, 24, 20)
+        dlg_layout.setSpacing(12)
+
+        title_label = BodyLabel("正在下载图片", main_widget)
+        title_label.setStyleSheet("font-size: 15px; font-weight: bold;")
+        dlg_layout.addWidget(title_label)
+
+        status_label = BodyLabel("初始化中...", main_widget)
+        status_label.setStyleSheet("font-size: 12px; color: rgba(255, 255, 255, 0.65);")
+        dlg_layout.addWidget(status_label)
+
+        progress_container = QWidget(main_widget)
+        progress_layout = QHBoxLayout(progress_container)
+        progress_layout.setContentsMargins(0, 0, 0, 0)
+        progress_layout.setSpacing(10)
+
+        progress_bar = ProgressBar(progress_container)
+        progress_bar.setRange(0, len(selected_ids))
+        progress_bar.setFixedHeight(5)
+        progress_layout.addWidget(progress_bar, 1)
+
+        progress_text = BodyLabel("0%", progress_container)
+        progress_text.setStyleSheet("font-size: 11px; color: rgba(255, 255, 255, 0.6); min-width: 30px;")
+        progress_text.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        progress_layout.addWidget(progress_text)
+
+        dlg_layout.addWidget(progress_container)
+        loading_dlg.textLayout.addWidget(main_widget)
+
+        # 创建信号发射器，用于跨线程通信
+        class DownloadSignal(QObject):
+            progress = pyqtSignal(int, int)
             finished = pyqtSignal(int, int)
 
-            def __init__(self, task_ids, download_dir):
-                super().__init__()
-                self.task_ids = task_ids
-                self.download_dir = download_dir
+        signal_emitter = DownloadSignal()
 
-            def run(self):
-                success, fail = 0, 0
-                for idx, tid in enumerate(self.task_ids):
-                    try:
-                        task = JimengIntlImageTask.get_task_by_id(tid)
-                        if not task:
-                            fail += 1
-                            continue
-                        outputs = task.get_output_images()
-                        if not outputs:
-                            fail += 1
-                            continue
-                        folder = os.path.join(self.download_dir, f"task_{tid}")
-                        os.makedirs(folder, exist_ok=True)
-                        for p in outputs:
-                            if p.lower().startswith("file:///"):
-                                p2 = p[8:].replace('/', '\\')
-                            else:
-                                p2 = p
-                            if os.path.exists(p2):
-                                fname = os.path.basename(p2)
-                                shutil.copy2(p2, os.path.join(folder, fname))
-                        success += 1
-                    except Exception:
-                        fail += 1
-                self.finished.emit(success, fail)
+        def on_progress_update(current, total):
+            """进度更新回调（在主线程执行）"""
+            status_label.setText(f"已处理 {current}/{total} 个任务")
+            progress_bar.setValue(current)
+            percentage = int((current / total * 100)) if total > 0 else 0
+            progress_text.setText(f"{percentage}%")
 
-        def on_finished(s, f):
-            if s > 0:
-                InfoBar.success(title="下载完成", content=f"成功下载 {s} 个任务" + (f"，{f} 个失败" if f > 0 else ""), parent=self, duration=3000, position=InfoBarPosition.TOP)
+        def on_download_finished(completed, failed):
+            """下载完成回调（在主线程执行）"""
+            loading_dlg.close()
+            if completed > 0:
+                msg = f"成功下载 {completed} 个任务"
+                if failed > 0:
+                    msg += f"，{failed} 个失败"
+                InfoBar.success(title="下载完成", content=msg, parent=self, duration=3000, position=InfoBarPosition.TOP)
+                log.info(f"批量下载完成: {msg}")
             else:
                 InfoBar.error(title="下载失败", content="所有任务下载失败", parent=self, position=InfoBarPosition.TOP)
 
-        th = DownloadThread(selected_ids, download_dir)
-        th.finished.connect(on_finished)
-        th.start()
+        def download_all_tasks():
+            """在子线程中下载所有任务"""
+            import requests
+            completed = 0
+            failed = 0
+
+            for idx, task_id in enumerate(selected_ids):
+                try:
+                    task = JimengIntlImageTask.get_task_by_id(task_id)
+                    if not task:
+                        failed += 1
+                        signal_emitter.progress.emit(idx + 1, len(selected_ids))
+                        continue
+
+                    outputs = task.get_output_images()
+                    if not outputs:
+                        failed += 1
+                        signal_emitter.progress.emit(idx + 1, len(selected_ids))
+                        continue
+
+                    folder = os.path.join(download_folder, f"task_{task_id}")
+                    os.makedirs(folder, exist_ok=True)
+
+                    for p in outputs:
+                        try:
+                            # 检查是否是 URL
+                            if p.startswith("http://") or p.startswith("https://"):
+                                # 网络下载
+                                response = requests.get(p, timeout=60)
+                                response.raise_for_status()
+
+                                # 从 URL 提取文件名
+                                fname = os.path.basename(p.split('?')[0])
+                                if not fname.endswith(('.jpg', '.jpeg', '.png', '.gif')):
+                                    fname = f"image_{len(os.listdir(folder)) + 1}.jpeg"
+
+                                filepath = os.path.join(folder, fname)
+                                with open(filepath, 'wb') as f:
+                                    f.write(response.content)
+                                log.debug(f"图片下载成功: {filepath}")
+                            else:
+                                # 本地文件
+                                if p.lower().startswith("file:///"):
+                                    p2 = p[8:].replace('/', '\\')
+                                else:
+                                    p2 = p
+
+                                if os.path.exists(p2):
+                                    fname = os.path.basename(p2)
+                                    shutil.copy2(p2, os.path.join(folder, fname))
+                                    log.debug(f"文件复制成功: {fname}")
+                                else:
+                                    log.warning(f"文件不存在: {p2}")
+                        except Exception as e:
+                            log.error(f"下载或复制文件失败: {e}")
+
+                    completed += 1
+                    log.debug(f"任务 {task_id} 下载完成")
+
+                except Exception as e:
+                    failed += 1
+                    log.error(f"下载任务 {task_id} 的图片失败: {e}")
+
+                signal_emitter.progress.emit(idx + 1, len(selected_ids))
+
+            signal_emitter.finished.emit(completed, failed)
+
+        # 连接信号到主线程的槽函数
+        signal_emitter.progress.connect(on_progress_update)
+        signal_emitter.finished.connect(on_download_finished)
+
+        # 在子线程中执行下载
+        download_thread = QThread()
+        download_thread.run = download_all_tasks
+        download_thread.start()
+
+        loading_dlg.exec()
 
     def showContextMenu(self, pos):
         item = self.table.itemAt(pos)
         if not item:
             return
         row = item.row()
-        status_item = self.table.item(row, 6)
+        status_item = self.table.item(row, 4)
         if not status_item:
             return
         task_id = status_item.data(Qt.UserRole)
@@ -463,9 +744,9 @@ class ImageGenIntlView(QWidget):
                         JimengIntlImageTask.create_task(
                             prompt=t.get('prompt', ''),
                             account_id=None,
-                            model=t.get('model', ''),
-                            ratio=t.get('ratio', ''),
-                            quality=t.get('quality', ''),
+                            ratio=t.get('ratio', '1:1'),
+                            model=t.get('model', 'jimeng-4.5'),
+                            resolution=t.get('resolution', '2k'),
                             input_images=t.get('input_images', [])
                         )
                         ok += 1
@@ -560,46 +841,41 @@ class BatchAddImageTaskIntlDialog(Dialog):
         self.tasks_added.emit(data)
         self.accept()
 
-class _ModelRatioQualityMixin:
-    def _init_mrq(self, owner):
+class _ModelRatioResolutionMixin:
+    def _init_mrr(self, owner):
         ml = QHBoxLayout()
+
         ml.addWidget(BodyLabel("模型:", owner))
         self.model_combo = ComboBox(owner)
-        self.model_combo.addItems(list(JIMENG_INTL_IMAGE_MODE_MAP.keys()))
-        self.model_combo.setFixedWidth(140)
+        self.model_combo.addItems(['nanobananapro', 'nanobanana', 'jimeng-4.5', 'jimeng-4.1', 'jimeng-4.0', 'jimeng-3.0'])
+        self.model_combo.setCurrentText('jimeng-4.5')
+        self.model_combo.setFixedWidth(160)
         ml.addWidget(self.model_combo)
+
         ml.addSpacing(15)
         ml.addWidget(BodyLabel("分辨率比例:", owner))
         self.ratio_combo = ComboBox(owner)
+        self.ratio_combo.addItems(['1:1', '4:3', '3:4', '16:9', '9:16', '3:2', '2:3', '21:9'])
+        self.ratio_combo.setCurrentText('1:1')
         self.ratio_combo.setFixedWidth(100)
         ml.addWidget(self.ratio_combo)
+
         ml.addSpacing(15)
         ml.addWidget(BodyLabel("清晰度:", owner))
-        self.quality_combo = ComboBox(owner)
-        self.quality_combo.setFixedWidth(100)
-        ml.addWidget(self.quality_combo)
-        ml.addStretch()
-        self.model_combo.currentTextChanged.connect(self._on_model_changed)
-        self._on_model_changed(self.model_combo.currentText())
-        return ml
-    def _on_model_changed(self, m):
-        cfg = JIMENG_INTL_IMAGE_MODE_MAP.get(m, {})
-        ratios = list(cfg.get('ratio', {}).values())
-        quals = list(cfg.get('quality', {}).values())
-        self.ratio_combo.clear()
-        self.quality_combo.clear()
-        if ratios:
-            self.ratio_combo.addItems(ratios)
-            self.ratio_combo.setCurrentIndex(0)
-        else:
-            self.ratio_combo.addItems(['-'])
-        if quals:
-            self.quality_combo.addItems(quals)
-            self.quality_combo.setCurrentIndex(0)
-        else:
-            self.quality_combo.addItems(['-'])
+        self.resolution_combo = ComboBox(owner)
+        self.resolution_combo.addItems(['1k', '2k', '4k'])
+        self.resolution_combo.setCurrentText('2k')
+        self.resolution_combo.setFixedWidth(100)
+        ml.addWidget(self.resolution_combo)
 
-class _FolderImportIntlWidget(QWidget, _ModelRatioQualityMixin):
+        ml.addStretch()
+        return ml
+
+    def _on_model_changed(self, m):
+        # 已弃用，保留以兼容旧代码
+        pass
+
+class _FolderImportIntlWidget(QWidget, _ModelRatioResolutionMixin):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.folder_path = ""
@@ -617,7 +893,7 @@ class _FolderImportIntlWidget(QWidget, _ModelRatioQualityMixin):
         btn.clicked.connect(self._on_select_folder)
         fl.addWidget(btn)
         layout.addLayout(fl)
-        layout.addLayout(self._init_mrq(self))
+        layout.addLayout(self._init_mrr(self))
         layout.addWidget(BodyLabel("默认提示词（可选）:", self))
         self.prompt_edit = TextEdit(self)
         self.prompt_edit.setFixedHeight(60)
@@ -655,12 +931,12 @@ class _FolderImportIntlWidget(QWidget, _ModelRatioQualityMixin):
                 'prompt': dft or os.path.splitext(os.path.basename(p))[0],
                 'model': self.model_combo.currentText(),
                 'ratio': self.ratio_combo.currentText(),
-                'quality': self.quality_combo.currentText(),
+                'resolution': self.resolution_combo.currentText(),
                 'input_images': [p]
             })
         return tasks
 
-class _TableImportIntlWidget(QWidget, _ModelRatioQualityMixin):
+class _TableImportIntlWidget(QWidget, _ModelRatioResolutionMixin):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.excel_path = ""
@@ -678,7 +954,7 @@ class _TableImportIntlWidget(QWidget, _ModelRatioQualityMixin):
         btn.clicked.connect(self._on_select_file)
         fl.addWidget(btn)
         layout.addLayout(fl)
-        layout.addLayout(self._init_mrq(self))
+        layout.addLayout(self._init_mrr(self))
         self.preview_table = QTableWidget(self)
         self.preview_table.setColumnCount(5)
         self.preview_table.setHorizontalHeaderLabels(['提示词', '模型', '参考图片路径', '分辨率比例', '清晰度'])
@@ -755,14 +1031,14 @@ class _TableImportIntlWidget(QWidget, _ModelRatioQualityMixin):
                     'prompt': str(row.get('提示词', '')),
                     'model': str(row.get('模型', self.model_combo.currentText())),
                     'ratio': str(row.get('分辨率比例', self.ratio_combo.currentText())),
-                    'quality': str(row.get('清晰度', self.quality_combo.currentText())),
+                    'resolution': str(row.get('清晰度', self.resolution_combo.currentText())),
                     'input_images': imgs
                 })
             return tasks
         except Exception:
             return []
 
-class _TextPromptImportIntlWidget(QWidget, _ModelRatioQualityMixin):
+class _TextPromptImportIntlWidget(QWidget, _ModelRatioResolutionMixin):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._initUI()
@@ -770,7 +1046,7 @@ class _TextPromptImportIntlWidget(QWidget, _ModelRatioQualityMixin):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(15, 10, 15, 10)
         layout.setSpacing(10)
-        layout.addLayout(self._init_mrq(self))
+        layout.addLayout(self._init_mrr(self))
         layout.addWidget(BodyLabel("提示词列表（每行一个）:", self))
         self.prompts_edit = TextEdit(self)
         layout.addWidget(self.prompts_edit)
@@ -790,11 +1066,11 @@ class _TextPromptImportIntlWidget(QWidget, _ModelRatioQualityMixin):
             'prompt': p,
             'model': self.model_combo.currentText(),
             'ratio': self.ratio_combo.currentText(),
-            'quality': self.quality_combo.currentText(),
+            'resolution': self.resolution_combo.currentText(),
             'input_images': []
         } for p in lines]
 
-class _SequentialAddIntlWidget(QWidget, _ModelRatioQualityMixin):
+class _SequentialAddIntlWidget(QWidget, _ModelRatioResolutionMixin):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.tasks = []
@@ -803,7 +1079,7 @@ class _SequentialAddIntlWidget(QWidget, _ModelRatioQualityMixin):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(15, 10, 15, 10)
         layout.setSpacing(10)
-        top = self._init_mrq(self)
+        top = self._init_mrr(self)
         add_btn = PrimaryPushButton(FIF.ADD, "添加到列表", self)
         add_btn.clicked.connect(self._on_add)
         top.addWidget(add_btn)
@@ -813,17 +1089,14 @@ class _SequentialAddIntlWidget(QWidget, _ModelRatioQualityMixin):
         self.prompt_edit.setFixedHeight(60)
         layout.addWidget(self.prompt_edit)
         self.table = QTableWidget(self)
-        self.table.setColumnCount(5)
-        self.table.setHorizontalHeaderLabels(['提示词', '模型', '分辨率比例', '清晰度', '操作'])
+        self.table.setColumnCount(3)
+        self.table.setHorizontalHeaderLabels(['提示词', '分辨率比例', '操作'])
         h = self.table.horizontalHeader()
         h.setSectionResizeMode(0, QHeaderView.Stretch)
-        h.setSectionResizeMode(1, QHeaderView.Interactive)
+        h.setSectionResizeMode(1, QHeaderView.Fixed)
         h.setSectionResizeMode(2, QHeaderView.Fixed)
-        h.setSectionResizeMode(3, QHeaderView.Fixed)
-        h.setSectionResizeMode(4, QHeaderView.Fixed)
-        self.table.setColumnWidth(2, 100)
-        self.table.setColumnWidth(3, 100)
-        self.table.setColumnWidth(4, 80)
+        self.table.setColumnWidth(1, 100)
+        self.table.setColumnWidth(2, 80)
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.table.setStyleSheet(
@@ -846,7 +1119,7 @@ class _SequentialAddIntlWidget(QWidget, _ModelRatioQualityMixin):
             'prompt': p,
             'model': self.model_combo.currentText(),
             'ratio': self.ratio_combo.currentText(),
-            'quality': self.quality_combo.currentText(),
+            'resolution': self.resolution_combo.currentText(),
             'input_images': []
         }
         self.tasks.append(t)
@@ -858,15 +1131,13 @@ class _SequentialAddIntlWidget(QWidget, _ModelRatioQualityMixin):
             r = self.table.rowCount()
             self.table.insertRow(r)
             self.table.setItem(r, 0, QTableWidgetItem(t['prompt']))
-            self.table.setItem(r, 1, QTableWidgetItem(t['model']))
-            self.table.setItem(r, 2, QTableWidgetItem(t['ratio']))
-            self.table.setItem(r, 3, QTableWidgetItem(t['quality']))
+            self.table.setItem(r, 1, QTableWidgetItem(t['ratio']))
             btn = PushButton(FIF.DELETE, "", self.table)
             btn.setFixedSize(60, 30)
             def _mk(idx=i):
                 self._del(idx)
             btn.clicked.connect(_mk)
-            self.table.setCellWidget(r, 4, btn)
+            self.table.setCellWidget(r, 2, btn)
     def _del(self, idx):
         if 0 <= idx < len(self.tasks):
             self.tasks.pop(idx)

@@ -3,7 +3,12 @@ from PyQt5.QtCore import QThread, pyqtSignal
 from concurrent.futures import ThreadPoolExecutor
 import time
 from app.utils.logger import log
-from app.managers.jimeng_image_task_executor import JimengImageTaskExecutor
+from app.utils.config_manager import get_config_manager
+
+# 默认任务管理器线程数
+DEFAULT_TASK_MANAGER_THREADS = 50
+# 配置键名
+CONFIG_KEY_TASK_MANAGER_THREADS = "task_manager_threads"
 
 
 class GlobalTaskManager(QThread):
@@ -14,15 +19,24 @@ class GlobalTaskManager(QThread):
     task_finished = pyqtSignal(str, int, bool)  # 任务类型, 任务ID, 是否成功
     status_changed = pyqtSignal(str)  # 状态消息
 
-    def __init__(self, max_workers=3, poll_interval=5):
+    def __init__(self, max_workers=None, poll_interval=5):
         """
         初始化任务管理器
 
         Args:
-            max_workers: 线程池最大工作线程数
+            max_workers: 线程池最大工作线程数，如不传则从配置读取
             poll_interval: 轮询间隔（秒）
         """
         super().__init__()
+
+        # 从配置读取线程数
+        if max_workers is None:
+            config_manager = get_config_manager()
+            max_workers = config_manager.get_int(
+                CONFIG_KEY_TASK_MANAGER_THREADS,
+                DEFAULT_TASK_MANAGER_THREADS
+            )
+
         self.max_workers = max_workers
         self.poll_interval = poll_interval
         self.is_running = False
@@ -36,27 +50,38 @@ class GlobalTaskManager(QThread):
 
     def register_executors(self):
         """注册所有任务执行器"""
-        # TODO: 在这里注册所有类型的任务执行器
-        self.executors.append(JimengImageTaskExecutor())
-        # 未来可以添加更多执行器：
-        # self.executors.append(QingyingVideoTaskExecutor())
-        # self.executors.append(RunwayTaskExecutor())
+        # 注册即梦国际版图片生成任务执行器
+        from app.managers.jimeng_intl_image_task_executor import JimengIntlImageTaskExecutor
+        self.executors.append(JimengIntlImageTaskExecutor())
 
         log.info(f"已注册 {len(self.executors)} 个任务执行器")
 
-    def set_max_workers(self, max_workers):
+    def set_max_workers(self, max_workers, save_config=True):
         """
         设置线程池最大工作线程数
 
         Args:
             max_workers: 最大工作线程数
+            save_config: 是否保存到配置
         """
+        # 限制范围
+        if max_workers < 1:
+            max_workers = 1
+        if max_workers > 200:
+            max_workers = 200
+
         self.max_workers = max_workers
+
+        # 保存到配置
+        if save_config:
+            config_manager = get_config_manager()
+            config_manager.set(CONFIG_KEY_TASK_MANAGER_THREADS, max_workers)
+
         if self.thread_pool:
             # 重新创建线程池
             self.thread_pool.shutdown(wait=False)
             self.thread_pool = ThreadPoolExecutor(max_workers=self.max_workers)
-            log.info(f"线程池大小已更新为: {self.max_workers}")
+            log.info(f"任务管理器线程池大小已更新为: {self.max_workers}")
 
     def set_poll_interval(self, interval):
         """

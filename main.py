@@ -22,10 +22,6 @@ from qfluentwidgets import FluentIcon as FIF, NavigationItemPosition, MSFluentWi
 from app.view.home_interface import HomeInterface
 from app.view.jimeng_interface import JiMengInterface
 from app.view.jimeng_intl_interface import JiMengIntlInterface
-from app.view.keling_interface import KeLingInterface
-from app.view.qingying_interface import QingYingInterface
-from app.view.vidu_interface import ViduInterface
-from app.view.hailuo_interface import HaiLuoInterface
 from app.view.runway_interface import RunwayInterface
 from app.view.settings_interface import SettingsInterface
 from app.database.init_db import init_database, close_database
@@ -59,12 +55,24 @@ class VideoRobotWindow(MSFluentWindow):
     def initTaskManager(self):
         """初始化并启动任务管理器"""
         from app.managers.global_task_manager import get_global_task_manager
+        from app.models.jimeng_intl_image_task import JimengIntlImageTask
+        from datetime import datetime
 
+        # 启动前将所有进行中的任务重置为排队中（状态 1 -> 0）
+        try:
+            running_tasks = JimengIntlImageTask.select().where(JimengIntlImageTask.status == 1)
+            for task in running_tasks:
+                task.status = 0
+                task.update_at = datetime.now()
+                task.save()
+            count = running_tasks.count()
+            if count > 0:
+                log.info(f"启动前重置了 {count} 个进行中的任务为排队状态")
+        except Exception as e:
+            log.error(f"重置进行中的任务失败: {e}")
+
+        # 初始化并启动任务管理器
         self.task_manager = get_global_task_manager()
-
-        # 设置默认参数
-        self.task_manager.set_max_workers(3)
-        self.task_manager.set_poll_interval(5)
 
         # 启动任务管理器
         self.task_manager.start()
@@ -105,10 +113,6 @@ class VideoRobotWindow(MSFluentWindow):
         self.homeInterface = HomeInterface(self)
         self.jimengInterface = JiMengInterface(self)
         self.jimengIntlInterface = JiMengIntlInterface(self)
-        self.kelingInterface = KeLingInterface(self)
-        self.qingyingInterface = QingYingInterface(self)
-        self.viduInterface = ViduInterface(self)
-        self.hailuoInterface = HaiLuoInterface(self)
         self.runwayInterface = RunwayInterface(self)
         self.settingsInterface = SettingsInterface(self)
 
@@ -125,38 +129,6 @@ class VideoRobotWindow(MSFluentWindow):
         # 即梦国际版 - 复用即梦图标
         self.addSubInterface(self.jimengIntlInterface, jimeng_icon, "即梦国际版")
 
-        # 可灵图标
-        keling_icon_path = os.path.join(project_root, "app", "assets", "keling_icon.png")
-        if os.path.exists(keling_icon_path):
-            keling_icon = QIcon(keling_icon_path)
-        else:
-            keling_icon = FIF.VIDEO
-        self.addSubInterface(self.kelingInterface, keling_icon, "可灵")
-
-        # 清影图标
-        qingying_icon_path = os.path.join(project_root, "app", "assets", "qingying_icon.png")
-        if os.path.exists(qingying_icon_path):
-            qingying_icon = QIcon(qingying_icon_path)
-        else:
-            qingying_icon = FIF.VIDEO
-        self.addSubInterface(self.qingyingInterface, qingying_icon, "清影")
-
-        # Vidu图标
-        vidu_icon_path = os.path.join(project_root, "app", "assets", "vidu_icon.svg")
-        if os.path.exists(vidu_icon_path):
-            vidu_icon = QIcon(vidu_icon_path)
-        else:
-            vidu_icon = FIF.VIDEO
-        self.addSubInterface(self.viduInterface, vidu_icon, "Vidu")
-
-        # 海螺图标
-        hailuo_icon_path = os.path.join(project_root, "app", "assets", "hailuo_icon.png")
-        if os.path.exists(hailuo_icon_path):
-            hailuo_icon = QIcon(hailuo_icon_path)
-        else:
-            hailuo_icon = FIF.VIDEO
-        self.addSubInterface(self.hailuoInterface, hailuo_icon, "海螺")
-
         # Runway图标
         runway_icon_path = os.path.join(project_root, "app", "assets", "runway_icon.png")
         if os.path.exists(runway_icon_path):
@@ -167,6 +139,29 @@ class VideoRobotWindow(MSFluentWindow):
 
         # 添加底部设置项
         self.addSubInterface(self.settingsInterface, FIF.SETTING, "设置")
+
+    def closeEvent(self, event):
+        """窗口关闭事件处理"""
+        log.info("应用正在关闭...")
+
+        # 停止任务管理器
+        if hasattr(self, 'task_manager') and self.task_manager:
+            log.info("正在停止任务管理器...")
+            self.task_manager.stop()
+            # 等待任务管理器线程退出（最多等待5秒）
+            self.task_manager.wait(2000)
+            log.info("任务管理器已停止")
+
+        # 关闭数据库连接
+        try:
+            close_database()
+            log.info("数据库连接已关闭")
+        except Exception as e:
+            log.error(f"关闭数据库失败: {e}")
+
+        # 接受关闭事件
+        event.accept()
+        log.info("应用已关闭")
 
 
 def exception_hook(exctype, value, tb):
@@ -184,10 +179,10 @@ def check_for_updates(parent=None):
 
         log.info("开始检查更新...")
 
-        # TODO: 替换为你的 GitHub 仓库信息
+        # 使用 GitHub 仓库信息
         manager = get_update_manager(
-            repo_owner="YOUR_GITHUB_USERNAME",
-            repo_name="YOUR_REPO_NAME"
+            repo_owner="shukeCyp",
+            repo_name="VideoRobot"
         )
 
         update_checker = manager.check_for_updates()
@@ -354,9 +349,6 @@ def main():
     # 运行应用
     log.info("应用运行中...")
     result = app.exec_()
-
-    # 关闭数据库连接
-    close_database()
 
     log.info("视频机器人已退出")
     sys.exit(result)

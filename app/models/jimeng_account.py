@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-from peewee import Model, AutoField, CharField, IntegerField, DateTimeField, TextField
+from peewee import Model, AutoField, CharField, IntegerField, DateTimeField
 from datetime import datetime
 from app.database.db import db
 
@@ -7,28 +7,24 @@ from app.database.db import db
 class JimengAccount(Model):
     """即梦账号表"""
     id = AutoField(primary_key=True, verbose_name="账号ID")
-    avatar = CharField(max_length=500, null=True, verbose_name="头像URL")
-    nickname = CharField(max_length=100, verbose_name="昵称")
-    points = IntegerField(default=0, verbose_name="积分")
-    vip_type = CharField(max_length=50, default="普通会员", verbose_name="会员类型")
-    vip_expire_time = DateTimeField(null=True, verbose_name="会员到期时间")
-    cookies = TextField(verbose_name="Cookies")
+    session_id = CharField(max_length=255, verbose_name="Session ID")
+    points = IntegerField(default=0, verbose_name="积分数量")
+    is_deleted = IntegerField(default=0, verbose_name="是否删除(0未删除 1已删除)")
+    disabled_at = DateTimeField(null=True, verbose_name="禁用日期")
     created_at = DateTimeField(default=datetime.now, verbose_name="创建时间")
-    updated_at = DateTimeField(default=datetime.now, verbose_name="更新时间")
 
     class Meta:
         database = db
         table_name = "jimeng_account"
 
     def save(self, *args, **kwargs):
-        """重写保存方法，自动更新updated_at"""
-        self.updated_at = datetime.now()
+        """重写保存方法"""
         return super().save(*args, **kwargs)
 
     @classmethod
     def get_all_accounts(cls):
-        """获取所有账号"""
-        return cls.select().order_by(cls.created_at.desc())
+        """获取所有未删除的账号"""
+        return cls.select().where(cls.is_deleted == 0).order_by(cls.created_at.desc())
 
     @classmethod
     def get_account_by_id(cls, account_id):
@@ -40,10 +36,25 @@ class JimengAccount(Model):
 
     @classmethod
     def delete_account(cls, account_id):
-        """删除账号"""
+        """删除账号（软删除）"""
         try:
             account = cls.get_by_id(account_id)
-            account.delete_instance()
+            account.is_deleted = 1
+            account.disabled_at = datetime.now()
+            account.save()
             return True
         except cls.DoesNotExist:
             return False
+
+    @classmethod
+    def create_account(cls, session_id: str):
+        """创建新账号"""
+        return cls.create(session_id=session_id)
+
+    @classmethod
+    def get_accounts_by_page(cls, page: int = 1, page_size: int = 20):
+        """分页获取账号"""
+        query = cls.select().where(cls.is_deleted == 0).order_by(cls.created_at.desc())
+        total = query.count()
+        rows = query.paginate(page, page_size)
+        return list(rows), total

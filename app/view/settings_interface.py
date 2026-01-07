@@ -1,12 +1,13 @@
 from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QFileDialog
 from qfluentwidgets import (ScrollArea, ExpandLayout, SettingCardGroup, SettingCard,
-                            SpinBox, BodyLabel, PrimaryPushButton,
+                            SpinBox, BodyLabel, PrimaryPushButton, LineEdit,
                             InfoBar, InfoBarPosition, FluentIcon as FIF,
                             MessageBox, SwitchButton)
 from app.utils.logger import log
 from app.utils.log_manager import get_log_manager
 from app.utils.config_manager import get_config_manager
+from app.managers.global_task_manager import get_global_task_manager, CONFIG_KEY_TASK_MANAGER_THREADS, DEFAULT_TASK_MANAGER_THREADS
 
 
 class SettingsInterface(ScrollArea):
@@ -34,34 +35,6 @@ class SettingsInterface(ScrollArea):
         """)
 
         self.initUI()
-        self.updateManagerStatus()
-
-    def updateManagerStatus(self):
-        """更新任务管理器状态显示"""
-        from app.managers.global_task_manager import get_global_task_manager
-
-        manager = get_global_task_manager()
-
-        if manager.isRunning():
-            # 更新SpinBox的值
-            status = manager.get_status()
-            self.thread_pool_spin.setValue(status['max_workers'])
-            self.poll_interval_spin.setValue(status['poll_interval'])
-
-            # 更新UI状态
-            self.status_label.setText("运行中")
-            self.status_label.setStyleSheet("color: rgba(0, 255, 0, 0.8); font-weight: bold;")
-            self.start_btn.setEnabled(False)
-            self.stop_btn.setEnabled(True)
-            self.thread_pool_spin.setEnabled(False)
-            self.poll_interval_spin.setEnabled(False)
-        else:
-            self.status_label.setText("未启动")
-            self.status_label.setStyleSheet("color: rgba(255, 255, 255, 0.6); font-weight: bold;")
-            self.start_btn.setEnabled(True)
-            self.stop_btn.setEnabled(False)
-            self.thread_pool_spin.setEnabled(True)
-            self.poll_interval_spin.setEnabled(True)
 
     def initUI(self):
         """初始化UI"""
@@ -71,98 +44,79 @@ class SettingsInterface(ScrollArea):
         self.expandLayout.setContentsMargins(40, 20, 40, 20)
         self.expandLayout.setSpacing(20)
 
+        # 即梦API设置组
+        self.jimeng_api_group = SettingCardGroup("即梦API地址", self.scrollWidget)
+
+        # jimeng-api 输入框卡片
+        self.jimeng_api_card = SettingCard(
+            FIF.LINK,
+            "Jimeng API",
+            "即梦API服务地址",
+            self.jimeng_api_group
+        )
+
+        # 添加输入框和保存按钮
+        jimeng_api_container = QWidget(self.jimeng_api_card)
+        jimeng_api_layout = QHBoxLayout(jimeng_api_container)
+        jimeng_api_layout.setContentsMargins(0, 0, 0, 0)
+        jimeng_api_layout.setSpacing(10)
+
+        self.jimeng_api_input = LineEdit(jimeng_api_container)
+        self.jimeng_api_input.setPlaceholderText("请输入即梦API地址")
+        self.jimeng_api_input.setFixedWidth(300)
+        # 从数据库加载已保存的值
+        config_manager = get_config_manager()
+        saved_api = config_manager.get("jimeng_api", "")
+        if saved_api:
+            self.jimeng_api_input.setText(saved_api)
+        jimeng_api_layout.addWidget(self.jimeng_api_input)
+
+        self.jimeng_api_save_btn = PrimaryPushButton(FIF.SAVE, "保存", jimeng_api_container)
+        self.jimeng_api_save_btn.clicked.connect(self.onSaveJimengApi)
+        jimeng_api_layout.addWidget(self.jimeng_api_save_btn)
+
+        self.jimeng_api_card.hBoxLayout.addWidget(jimeng_api_container, 0, Qt.AlignRight)
+        self.jimeng_api_card.hBoxLayout.addSpacing(16)
+
+        # 添加到组
+        self.jimeng_api_group.addSettingCard(self.jimeng_api_card)
+
+        # 添加到布局
+        self.expandLayout.addWidget(self.jimeng_api_group)
+
         # 任务管理器设置组
         self.task_manager_group = SettingCardGroup("任务管理器", self.scrollWidget)
 
-        # 线程池大小设置卡片
-        self.thread_pool_card = SettingCard(
+        # 任务管理器线程数设置卡片
+        self.task_threads_card = SettingCard(
             FIF.PEOPLE,
-            "线程池大小",
-            "同时执行的最大任务数量",
+            "任务线程数",
+            "任务管理器的最大并发线程数（1-200）",
             self.task_manager_group
         )
 
-        # 添加 SpinBox 到卡片
-        self.thread_pool_spin = SpinBox(self.thread_pool_card)
-        self.thread_pool_spin.setRange(1, 10)
-        self.thread_pool_spin.setValue(3)
-        self.thread_pool_spin.setFixedWidth(120)
-        self.thread_pool_card.hBoxLayout.addWidget(self.thread_pool_spin, 0, Qt.AlignRight)
-        self.thread_pool_card.hBoxLayout.addSpacing(16)
+        # 创建任务线程数设置容器
+        task_threads_container = QWidget(self.task_threads_card)
+        task_threads_layout = QHBoxLayout(task_threads_container)
+        task_threads_layout.setContentsMargins(0, 0, 0, 0)
+        task_threads_layout.setSpacing(10)
 
-        # 轮询间隔设置卡片
-        self.poll_interval_card = SettingCard(
-            FIF.CALENDAR,
-            "轮询间隔",
-            "检查新任务的时间间隔（秒）",
-            self.task_manager_group
-        )
+        self.task_threads_spin = SpinBox(task_threads_container)
+        self.task_threads_spin.setRange(1, 200)
+        saved_task_threads = config_manager.get_int(CONFIG_KEY_TASK_MANAGER_THREADS, DEFAULT_TASK_MANAGER_THREADS)
+        self.task_threads_spin.setValue(saved_task_threads)
+        self.task_threads_spin.setFixedWidth(120)
+        task_threads_layout.addWidget(self.task_threads_spin)
 
-        # 添加 SpinBox 到卡片
-        self.poll_interval_spin = SpinBox(self.poll_interval_card)
-        self.poll_interval_spin.setRange(1, 60)
-        self.poll_interval_spin.setValue(5)
-        self.poll_interval_spin.setFixedWidth(120)
-        self.poll_interval_card.hBoxLayout.addWidget(self.poll_interval_spin, 0, Qt.AlignRight)
-        self.poll_interval_card.hBoxLayout.addSpacing(16)
+        self.task_threads_save_btn = PrimaryPushButton(FIF.SAVE, "保存", task_threads_container)
+        self.task_threads_save_btn.clicked.connect(self.onSaveTaskThreads)
+        task_threads_layout.addWidget(self.task_threads_save_btn)
 
-        # 创建控制面板卡片
-        self.control_card = SettingCard(
-            FIF.PLAY,
-            "任务管理器控制",
-            "启动或停止任务管理器",
-            self.task_manager_group
-        )
-
-        # 创建控制按钮容器
-        control_container = QWidget(self.control_card)
-        control_layout = QHBoxLayout(control_container)
-        control_layout.setContentsMargins(0, 0, 0, 0)
-        control_layout.setSpacing(10)
-
-        self.status_label = BodyLabel("未启动", control_container)
-        self.status_label.setStyleSheet("color: rgba(255, 255, 255, 0.6); font-weight: bold;")
-        control_layout.addWidget(self.status_label)
-
-        self.start_btn = PrimaryPushButton(FIF.PLAY, "启动", control_container)
-        self.start_btn.clicked.connect(self.onStartTaskManager)
-        control_layout.addWidget(self.start_btn)
-
-        self.stop_btn = PrimaryPushButton(FIF.PAUSE, "停止", control_container)
-        self.stop_btn.clicked.connect(self.onStopTaskManager)
-        self.stop_btn.setEnabled(False)
-        control_layout.addWidget(self.stop_btn)
-
-        self.control_card.hBoxLayout.addWidget(control_container, 0, Qt.AlignRight)
-        self.control_card.hBoxLayout.addSpacing(16)
-
-        # 浏览器窗口显示设置卡片
-        self.browser_headless_card = SettingCard(
-            FIF.VIEW,
-            "隐藏浏览器窗口",
-            "开启后自动化任务将在后台执行（无头模式）",
-            self.task_manager_group
-        )
-
-        # 添加开关按钮
-        self.browser_headless_switch = SwitchButton(self.browser_headless_card)
-
-        # 从配置文件读取初始值
-        config_manager = get_config_manager()
-        is_headless = config_manager.get('browser.headless', True)  # 默认隐藏
-        self.browser_headless_switch.setChecked(is_headless)
-
-        # 连接信号
-        self.browser_headless_switch.checkedChanged.connect(self.onBrowserHeadlessChanged)
-
-        self.browser_headless_card.hBoxLayout.addWidget(self.browser_headless_switch, 0, Qt.AlignRight)
-        self.browser_headless_card.hBoxLayout.addSpacing(16)
+        self.task_threads_card.hBoxLayout.addWidget(task_threads_container, 0, Qt.AlignRight)
+        self.task_threads_card.hBoxLayout.addSpacing(16)
 
         # 添加到组
-        self.task_manager_group.addSettingCard(self.thread_pool_card)
-        self.task_manager_group.addSettingCard(self.poll_interval_card)
-        self.task_manager_group.addSettingCard(self.browser_headless_card)
-        self.task_manager_group.addSettingCard(self.control_card)
+        self.task_manager_group.addSettingCard(self.task_threads_card)
 
         # 添加到布局
         self.expandLayout.addWidget(self.task_manager_group)
@@ -266,85 +220,45 @@ class SettingsInterface(ScrollArea):
         # 初始化日志信息
         self.onRefreshLogInfo()
 
-    def onStartTaskManager(self):
-        """启动任务管理器"""
-        from app.managers.global_task_manager import get_global_task_manager
+    def onSaveJimengApi(self):
+        """保存即梦API地址"""
+        api_url = self.jimeng_api_input.text().strip()
+        config_manager = get_config_manager()
 
-        max_workers = self.thread_pool_spin.value()
-        poll_interval = self.poll_interval_spin.value()
-
-        log.info(f"启动任务管理器: 线程池={max_workers}, 轮询间隔={poll_interval}秒")
-
-        manager = get_global_task_manager()
-        manager.set_max_workers(max_workers)
-        manager.set_poll_interval(poll_interval)
-
-        if not manager.isRunning():
-            manager.start()
-
-        self.status_label.setText("运行中")
-        self.status_label.setStyleSheet("color: rgba(0, 255, 0, 0.8); font-weight: bold;")
-        self.start_btn.setEnabled(False)
-        self.stop_btn.setEnabled(True)
-        self.thread_pool_spin.setEnabled(False)
-        self.poll_interval_spin.setEnabled(False)
-
-        InfoBar.success(
-            title="启动成功",
-            content="任务管理器已启动",
-            parent=self,
-            position=InfoBarPosition.TOP
-        )
-
-    def onStopTaskManager(self):
-        """停止任务管理器"""
-        from app.managers.global_task_manager import get_global_task_manager
-
-        log.info("停止任务管理器")
-
-        manager = get_global_task_manager()
-        manager.stop()
-        manager.wait()
-
-        self.status_label.setText("已停止")
-        self.status_label.setStyleSheet("color: rgba(255, 255, 255, 0.6); font-weight: bold;")
-        self.start_btn.setEnabled(True)
-        self.stop_btn.setEnabled(False)
-        self.thread_pool_spin.setEnabled(True)
-        self.poll_interval_spin.setEnabled(True)
-
-        InfoBar.info(
-            title="已停止",
-            content="任务管理器已停止",
-            parent=self,
-            position=InfoBarPosition.TOP
-        )
-
-    def onBrowserHeadlessChanged(self, is_checked):
-        """浏览器窗口显示开关改变"""
-        try:
-            config_manager = get_config_manager()
-            config_manager.set('browser.headless', is_checked)
-
-            status_text = "隐藏" if is_checked else "显示"
-            log.info(f"浏览器窗口设置已更改为: {status_text}")
-
+        if config_manager.set("jimeng_api", api_url):
+            log.info(f"即梦API地址已保存: {api_url}")
             InfoBar.success(
-                title="设置已保存",
-                content=f"浏览器窗口将{status_text}",
+                title="保存成功",
+                content="即梦API地址已保存",
                 parent=self,
                 position=InfoBarPosition.TOP,
-                duration=2000
+                duration=3000
             )
-
-        except Exception as e:
-            log.error(f"保存浏览器窗口设置失败: {str(e)}")
+        else:
             InfoBar.error(
                 title="保存失败",
-                content=str(e),
+                content="无法保存即梦API地址",
                 parent=self,
-                position=InfoBarPosition.TOP
+                position=InfoBarPosition.TOP,
+                duration=3000
             )
+
+    def onSaveTaskThreads(self):
+        """保存任务管理器线程数设置"""
+        threads = self.task_threads_spin.value()
+
+        log.info(f"保存任务管理器线程数: {threads}")
+
+        task_manager = get_global_task_manager()
+        task_manager.set_max_workers(threads)
+
+        InfoBar.success(
+            title="保存成功",
+            content=f"任务管理器线程数已设置为 {threads}",
+            parent=self,
+            position=InfoBarPosition.TOP,
+            duration=3000
+        )
 
     def onRefreshLogInfo(self):
         """刷新日志信息"""
@@ -481,10 +395,10 @@ class SettingsInterface(ScrollArea):
 
             log.info("用户手动检查更新...")
 
-            # TODO: 替换为你的 GitHub 仓库信息
+            # 使用 GitHub 仓库信息
             manager = get_update_manager(
-                repo_owner="YOUR_GITHUB_USERNAME",
-                repo_name="YOUR_REPO_NAME"
+                repo_owner="shukeCyp",
+                repo_name="VideoRobot"
             )
 
             update_checker = manager.check_for_updates()

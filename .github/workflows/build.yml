@@ -1,0 +1,126 @@
+name: Build Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+      - 'V*'
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Build with PyInstaller
+        run: |
+          pyinstaller --onefile `
+            --windowed `
+            --name "VideoRobot" `
+            --icon=icon.png `
+            --add-data "icon.png:." `
+            --add-data "group_qrcode.png:." `
+            --add-data "vx_qrcode.png:." `
+            --add-data "app:app" `
+            --hidden-import=PyQt5 `
+            --hidden-import=qfluentwidgets `
+            --hidden-import=peewee `
+            --hidden-import=requests `
+            main.py
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: VideoRobot-windows
+          path: dist/VideoRobot.exe
+
+  build-macos:
+    runs-on: macos-latest
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Build with PyInstaller
+        run: |
+          pyinstaller --onefile \
+            --windowed \
+            --name "VideoRobot" \
+            --icon=icon.png \
+            --add-data "icon.png:." \
+            --add-data "group_qrcode.png:." \
+            --add-data "vx_qrcode.png:." \
+            --add-data "app:app" \
+            --hidden-import=PyQt5 \
+            --hidden-import=qfluentwidgets \
+            --hidden-import=peewee \
+            --hidden-import=requests \
+            main.py
+
+      - name: Create macOS DMG
+        run: |
+          mkdir -p dist/dmg
+          cp -r dist/VideoRobot.app dist/dmg/
+          cp -r dist/VideoRobot.app /tmp/VideoRobot.app
+          hdiutil create -volname "VideoRobot" \
+            -srcfolder dist/dmg \
+            -ov -format UDZO \
+            dist/VideoRobot.dmg
+
+      - name: Upload macOS artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: VideoRobot-macos
+          path: dist/VideoRobot.dmg
+
+  create-release:
+    needs: [build-windows, build-macos]
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Download Windows artifact
+        uses: actions/download-artifact@v3
+        with:
+          name: VideoRobot-windows
+          path: ./artifacts/windows
+
+      - name: Download macOS artifact
+        uses: actions/download-artifact@v3
+        with:
+          name: VideoRobot-macos
+          path: ./artifacts/macos
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            artifacts/windows/VideoRobot.exe
+            artifacts/macos/VideoRobot.dmg
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

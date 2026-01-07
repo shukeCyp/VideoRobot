@@ -9,9 +9,9 @@ class JimengIntlImageTask(Model):
     id = AutoField(primary_key=True)
 
     prompt = TextField()
-    model = CharField(max_length=100, default="Image 3.1")
     ratio = CharField(max_length=20, default="1:1")
-    quality = CharField(max_length=20, default="1K")
+    model = CharField(max_length=50, default="jimeng-4.5")
+    resolution = CharField(max_length=20, default="2k")
 
     status = IntegerField(default=0)
 
@@ -19,8 +19,6 @@ class JimengIntlImageTask(Model):
 
     input_images = TextField(null=True)
     output_images = TextField(null=True)
-
-    task_id = CharField(max_length=100, null=True)
 
     code = CharField(max_length=50, null=True)
     message = TextField(null=True)
@@ -67,10 +65,9 @@ class JimengIntlImageTask(Model):
             self.output_images = None
 
     @classmethod
-    def create_task(cls, prompt: str, account_id: int = None, model: str = "Image 3.1",
-                    ratio: str = "1:1", quality: str = "1K", input_images=None):
+    def create_task(cls, prompt: str, account_id: int = None, ratio: str = "1:1", model: str = "jimeng-4.5", resolution: str = "2k", input_images=None):
         if account_id is not None:
-            acc = JimengIntlAccount.select().where((JimengIntlAccount.id == account_id) & (JimengIntlAccount.isdel == 0)).first()
+            acc = JimengIntlAccount.select().where((JimengIntlAccount.id == account_id) & (JimengIntlAccount.is_deleted == 0)).first()
             if not acc:
                 raise ValueError("invalid account_id")
         input_json = None
@@ -79,9 +76,9 @@ class JimengIntlImageTask(Model):
         return cls.create(
             prompt=prompt,
             account_id=account_id,
-            model=model,
             ratio=ratio,
-            quality=quality,
+            model=model,
+            resolution=resolution,
             status=0,
             input_images=input_json
         )

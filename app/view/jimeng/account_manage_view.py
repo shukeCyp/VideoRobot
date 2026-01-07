@@ -1,456 +1,571 @@
 # -*- coding: utf-8 -*-
-import requests
-from io import BytesIO
-from datetime import datetime
-from PyQt5.QtCore import Qt, QThread, pyqtSignal, QPoint
-from PyQt5.QtGui import QPixmap, QColor, QCursor
-from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QTableWidgetItem, QHeaderView, QLabel
-from qfluentwidgets import (PrimaryPushButton, PushButton, TableWidget,
-                            MessageBox, FluentIcon as FIF, InfoBar, InfoBarPosition,
-                            RoundMenu, Action)
+from PyQt5.QtCore import Qt
+from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QTableWidgetItem, QHeaderView
+from qfluentwidgets import (PrimaryPushButton, PushButton, TableWidget, ComboBox,
+                            FluentIcon as FIF, InfoBar, InfoBarPosition, Dialog,
+                            BodyLabel, CheckBox, Action, RoundMenu, MessageBox, LineEdit)
 from app.models.jimeng_account import JimengAccount
 from app.utils.logger import log
 
 
-class AvatarLoader(QThread):
-    """头像加载线程"""
-    finished = pyqtSignal(int, QPixmap)
+class AddAccountDialog(Dialog):
+    """批量添加账号对话框"""
 
-    def __init__(self, row, url):
-        super().__init__()
-        self.row = row
-        self.url = url
+    def __init__(self, parent=None):
+        super().__init__("批量添加账号", "", parent)
+        self.setFixedWidth(600)
+        self.setFixedHeight(400)
 
-    def run(self):
-        try:
-            response = requests.get(self.url, timeout=5)
-            if response.status_code == 200:
-                pixmap = QPixmap()
-                pixmap.loadFromData(response.content)
-                self.finished.emit(self.row, pixmap)
-        except Exception as e:
-            print(f"加载头像失败: {e}")
+        content = QWidget(self)
+        layout = QVBoxLayout(content)
+        layout.setContentsMargins(20, 10, 20, 10)
+        layout.setSpacing(15)
+
+        # 说明
+        hint_label = BodyLabel("每行一个 Session ID 或 Token，系统将自动查询积分", content)
+        layout.addWidget(hint_label)
+
+        # Session ID 输入框（文本编辑）
+        from qfluentwidgets import TextEdit
+        self.session_edit = TextEdit(content)
+        self.session_edit.setPlaceholderText("请输入账号列表，每行一个 Session ID 或 Token")
+        layout.addWidget(self.session_edit)
+
+        self.textLayout.addWidget(content)
+
+        self.yesButton.setText("批量添加")
+        self.cancelButton.setText("取消")
+
+    def get_session_ids(self) -> list:
+        """获取所有输入的 Session ID"""
+        text = self.session_edit.toPlainText()
+        # 按行分割，去除空行和多余空格
+        ids = [line.strip() for line in text.split('\n') if line.strip()]
+        return ids
 
 
 class AccountManageView(QWidget):
-    """账号管理视图"""
-
-    DEFAULT_AVATAR_URL = "https://p3-passport.byteacctimg.com/img/user-avatar/19365e835b806b06dc942489efb1340a~300x300.image"
+    """即梦国内版账号管理视图"""
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.avatarLoaders = []  # 保存加载线程的引用
-        self.loginWindowThread = None  # 保存登录窗口线程的引用
-        self.initUI()
+        self.setObjectName("accountManage")
+        self.current_page = 1
+        self.page_size = 20
+        self._initUI()
 
-    def closeLoginWindow(self):
-        """关闭登录窗口（不关闭界面本身）"""
-        if not self.loginWindowThread or not self.loginWindowThread.isRunning():
-            return
-
-        log.info("关闭登录窗口...")
-
-        # 调用窗口的close方法
-        if hasattr(self.loginWindowThread, 'window') and self.loginWindowThread.window:
-            try:
-                self.loginWindowThread.window.close()
-            except Exception as e:
-                log.error(f"关闭窗口失败: {e}")
-
-        # 等待线程结束
-        if not self.loginWindowThread.wait(2000):
-            log.warning("线程超时，强制终止")
-            self.loginWindowThread.terminate()
-
-        log.info("登录窗口已关闭")
-
-    def closeEvent(self, event):
-        """界面关闭事件处理"""
-        log.info("账号管理视图正在关闭...")
-
-        # 关闭登录窗口
-        self.closeLoginWindow()
-
-        # 清理头像加载线程
-        for loader in self.avatarLoaders:
-            loader.quit()
-            loader.wait()
-
-        event.accept()
-
-    def initUI(self):
-        """初始化UI"""
+    def _initUI(self):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(40, 20, 40, 40)
         layout.setSpacing(20)
 
-        # 顶部按钮区域
-        buttonLayout = QHBoxLayout()
+        # 顶部操作栏
+        top = QHBoxLayout()
 
-        # 添加左侧弹性空间，让按钮靠右
-        buttonLayout.addStretch()
+        self.selectAllCheckBox = CheckBox("全选", self)
+        self.selectAllCheckBox.stateChanged.connect(self.onSelectAllChanged)
+        top.addWidget(self.selectAllCheckBox)
+
+        top.addStretch()
 
         self.addAccountBtn = PrimaryPushButton(FIF.ADD, "添加账号", self)
         self.addAccountBtn.clicked.connect(self.onAddAccount)
-        buttonLayout.addWidget(self.addAccountBtn)
+        top.addWidget(self.addAccountBtn)
 
         self.refreshBtn = PushButton(FIF.SYNC, "刷新", self)
         self.refreshBtn.clicked.connect(self.onRefresh)
-        buttonLayout.addWidget(self.refreshBtn)
+        top.addWidget(self.refreshBtn)
 
-        layout.addLayout(buttonLayout)
+        self.checkPointsBtn = PushButton(FIF.CLOUD, "查询积分", self)
+        self.checkPointsBtn.clicked.connect(self.onCheckPoints)
+        top.addWidget(self.checkPointsBtn)
+
+        self.deleteBtn = PushButton(FIF.DELETE, "删除", self)
+        self.deleteBtn.clicked.connect(self.onBatchDelete)
+        top.addWidget(self.deleteBtn)
+
+        layout.addLayout(top)
 
         # 账号表格
-        self.accountTable = TableWidget(self)
-        self.accountTable.setBorderVisible(True)
-        self.accountTable.setBorderRadius(8)
-        self.accountTable.setWordWrap(False)
-        self.accountTable.setContextMenuPolicy(Qt.CustomContextMenu)
-        self.accountTable.customContextMenuRequested.connect(self.showContextMenu)
+        self.table = TableWidget(self)
+        self.table.setBorderVisible(True)
+        self.table.setBorderRadius(8)
+        self.table.setWordWrap(False)
+        self.table.setColumnCount(5)
+        self.table.setHorizontalHeaderLabels(["", "ID", "Session ID", "积分", "创建时间"])
 
-        # 设置表格列
-        self.accountTable.setColumnCount(4)
-        self.accountTable.setHorizontalHeaderLabels(['头像', '名字', '积分', '会员到期日'])
+        header = self.table.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.Fixed)
+        header.setSectionResizeMode(1, QHeaderView.Fixed)
+        header.setSectionResizeMode(2, QHeaderView.Stretch)
+        header.setSectionResizeMode(3, QHeaderView.Fixed)
+        header.setSectionResizeMode(4, QHeaderView.Fixed)
 
-        # 设置列宽 - 四列等宽
-        self.accountTable.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-        self.accountTable.verticalHeader().setVisible(False)
+        self.table.setColumnWidth(0, 50)
+        self.table.setColumnWidth(1, 60)
+        self.table.setColumnWidth(3, 80)
+        self.table.setColumnWidth(4, 200)
 
-        layout.addWidget(self.accountTable)
+        self.table.verticalHeader().setVisible(False)
+        self.table.setSelectionBehavior(TableWidget.SelectRows)
+        self.table.setSelectionMode(TableWidget.ExtendedSelection)
+        self.table.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.table.customContextMenuRequested.connect(self.showContextMenu)
 
-        # 加载数据库数据
+        layout.addWidget(self.table)
+
+        # 底部分页
+        bottom = QHBoxLayout()
+
+        sizeLabel = BodyLabel("每页显示:", self)
+        bottom.addWidget(sizeLabel)
+
+        self.pageSizeCombo = ComboBox(self)
+        self.pageSizeCombo.addItems(['10', '20', '50', '100'])
+        self.pageSizeCombo.setCurrentText('20')
+        self.pageSizeCombo.currentTextChanged.connect(self.onPageSizeChanged)
+        self.pageSizeCombo.setFixedWidth(100)
+        bottom.addWidget(self.pageSizeCombo)
+
+        bottom.addStretch()
+
+        self.pageInfoLabel = BodyLabel("第 1 页，共 0 条", self)
+        bottom.addWidget(self.pageInfoLabel)
+
+        bottom.addSpacing(20)
+
+        self.prevPageBtn = PushButton(FIF.CARE_LEFT_SOLID, "上一页", self)
+        self.prevPageBtn.clicked.connect(self.onPrevPage)
+        bottom.addWidget(self.prevPageBtn)
+
+        self.nextPageBtn = PushButton(FIF.CARE_RIGHT_SOLID, "下一页", self)
+        self.nextPageBtn.clicked.connect(self.onNextPage)
+        bottom.addWidget(self.nextPageBtn)
+
+        layout.addLayout(bottom)
+
+        # 加载数据
         self.loadAccounts()
 
     def loadAccounts(self):
-        """从数据库加载账号数据"""
+        """加载账号列表"""
         try:
-            # 清空之前的加载线程
-            for loader in self.avatarLoaders:
-                loader.quit()
-                loader.wait()
-            self.avatarLoaders.clear()
+            accounts, total_count = JimengAccount.get_accounts_by_page(self.current_page, self.page_size)
 
-            # 从数据库获取所有账号
-            accounts = JimengAccount.get_all_accounts()
-            self.accountTable.setRowCount(len(accounts))
+            self.table.clearContents()
+            self.table.setRowCount(len(accounts))
 
             for row, account in enumerate(accounts):
-                # 头像列 - 创建QLabel显示图片
-                avatarLabel = QLabel()
-                avatarLabel.setAlignment(Qt.AlignCenter)
-                avatarLabel.setFixedSize(60, 60)
-                avatarLabel.setScaledContents(True)
-                avatarLabel.setText("加载中...")
+                # 复选框
+                checkbox = CheckBox()
+                container = QWidget(self.table)
+                c_layout = QHBoxLayout(container)
+                c_layout.setContentsMargins(0, 0, 0, 0)
+                c_layout.setAlignment(Qt.AlignCenter)
+                c_layout.addWidget(checkbox)
+                self.table.setCellWidget(row, 0, container)
 
-                # 创建容器widget使头像居中
-                avatarWidget = QWidget()
-                avatarLayout = QHBoxLayout(avatarWidget)
-                avatarLayout.setContentsMargins(10, 5, 10, 5)
-                avatarLayout.addWidget(avatarLabel)
+                # ID
+                id_item = QTableWidgetItem(str(account.id))
+                id_item.setTextAlignment(Qt.AlignCenter)
+                id_item.setData(Qt.UserRole, account.id)
+                self.table.setItem(row, 1, id_item)
 
-                self.accountTable.setCellWidget(row, 0, avatarWidget)
-                self.accountTable.setRowHeight(row, 70)
+                # Session ID (显示全部)
+                session_id = account.session_id or ""
+                session_item = QTableWidgetItem(session_id)
+                session_item.setTextAlignment(Qt.AlignCenter)
+                self.table.setItem(row, 2, session_item)
 
-                # 异步加载头像
-                avatar_url = account.avatar if account.avatar else self.DEFAULT_AVATAR_URL
-                loader = AvatarLoader(row, avatar_url)
-                loader.finished.connect(self.onAvatarLoaded)
-                self.avatarLoaders.append(loader)
-                loader.start()
+                # 积分
+                points_item = QTableWidgetItem(str(account.points))
+                points_item.setTextAlignment(Qt.AlignCenter)
+                self.table.setItem(row, 3, points_item)
 
-                # 名字列
-                nameItem = QTableWidgetItem(account.nickname)
-                nameItem.setTextAlignment(Qt.AlignCenter)
-                nameItem.setData(Qt.UserRole, account.id)  # 存储账号ID
-                self.accountTable.setItem(row, 1, nameItem)
+                # 创建时间
+                created_at = account.created_at.strftime("%Y-%m-%d %H:%M:%S") if account.created_at else "-"
+                time_item = QTableWidgetItem(created_at)
+                time_item.setTextAlignment(Qt.AlignCenter)
+                self.table.setItem(row, 4, time_item)
 
-                # 积分列
-                pointsItem = QTableWidgetItem(str(account.points))
-                pointsItem.setTextAlignment(Qt.AlignCenter)
-                self.accountTable.setItem(row, 2, pointsItem)
-
-                # 会员到期日列
-                vip_text = "未开通"
-                if account.vip_expire_time:
-                    now = datetime.now()
-                    if account.vip_expire_time > now:
-                        vip_text = account.vip_expire_time.strftime("%Y-%m-%d %H:%M:%S")
-                    else:
-                        vip_text = "已过期"
-
-                vipItem = QTableWidgetItem(vip_text)
-                vipItem.setTextAlignment(Qt.AlignCenter)
-                self.accountTable.setItem(row, 3, vipItem)
-
-            log.info(f"加载了 {len(accounts)} 个账号")
+            # 更新分页信息
+            total_pages = (total_count + self.page_size - 1) // self.page_size if total_count > 0 else 1
+            self.pageInfoLabel.setText(f"第 {self.current_page} 页，共 {total_count} 条")
+            self.prevPageBtn.setEnabled(self.current_page > 1)
+            self.nextPageBtn.setEnabled(self.current_page < total_pages)
 
         except Exception as e:
-            log.error(f"加载账号失败: {e}")
-            InfoBar.error(
-                title="加载失败",
-                content=str(e),
-                parent=self,
-                position=InfoBarPosition.TOP
-            )
+            log.error(f"加载账号列表失败: {e}")
+            self.table.setRowCount(0)
+            InfoBar.error(title="加载失败", content=str(e), parent=self, position=InfoBarPosition.TOP)
 
-    def onAvatarLoaded(self, row, pixmap):
-        """头像加载完成"""
-        if row < self.accountTable.rowCount():
-            avatarWidget = self.accountTable.cellWidget(row, 0)
-            if avatarWidget:
-                avatarLabel = avatarWidget.findChild(QLabel)
-                if avatarLabel:
-                    # 将图片缩放为圆形
-                    scaled_pixmap = pixmap.scaled(60, 60, Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
-                    avatarLabel.setPixmap(scaled_pixmap)
+    def _create_loading_dialog(self, total_items: int, title: str = "正在处理") -> tuple:
+        """创建美化的加载对话框"""
+        from qfluentwidgets import ProgressBar
 
-    def showContextMenu(self, pos: QPoint):
-        """显示右键菜单"""
-        # 获取点击的行
-        item = self.accountTable.itemAt(pos)
-        if not item:
-            return
+        loading_dlg = Dialog("", "", self)
+        loading_dlg.setFixedWidth(400)
+        loading_dlg.setFixedHeight(150)
+        loading_dlg.yesButton.setVisible(False)
+        loading_dlg.cancelButton.setVisible(False)
+        loading_dlg.titleLabel.setVisible(False)
 
-        row = item.row()
-        account_id = self.accountTable.item(row, 1).data(Qt.UserRole)
+        # 直接在 textLayout 中添加内容
+        main_widget = QWidget(loading_dlg)
+        layout = QVBoxLayout(main_widget)
+        layout.setContentsMargins(24, 20, 24, 20)
+        layout.setSpacing(12)
 
-        # 创建右键菜单 - 使用 Fluent 风格的 RoundMenu
-        menu = RoundMenu(parent=self)
+        # 标题
+        title_label = BodyLabel(title, main_widget)
+        title_label.setStyleSheet("font-size: 15px; font-weight: bold;")
+        layout.addWidget(title_label)
 
-        # 添加登录操作
-        loginAction = Action(FIF.SYNC, "登录", self)
-        loginAction.triggered.connect(lambda: self.onLogin(account_id))
-        menu.addAction(loginAction)
+        # 状态文本
+        status_label = BodyLabel("初始化中...", main_widget)
+        status_label.setStyleSheet("font-size: 12px; color: rgba(255, 255, 255, 0.65);")
+        layout.addWidget(status_label)
 
-        # 添加删除操作
-        deleteAction = Action(FIF.DELETE, "删除", self)
-        deleteAction.triggered.connect(lambda: self.onDelete(account_id))
-        menu.addAction(deleteAction)
+        # 进度条容器
+        progress_container = QWidget(main_widget)
+        progress_layout = QHBoxLayout(progress_container)
+        progress_layout.setContentsMargins(0, 0, 0, 0)
+        progress_layout.setSpacing(10)
 
-        # 显示菜单
-        menu.exec(QCursor.pos())
+        # 进度条
+        progress_bar = ProgressBar(progress_container)
+        progress_bar.setRange(0, total_items)
+        progress_bar.setFixedHeight(5)
+        progress_layout.addWidget(progress_bar, 1)
+
+        # 进度百分比文本
+        progress_text = BodyLabel("0%", progress_container)
+        progress_text.setStyleSheet("font-size: 11px; color: rgba(255, 255, 255, 0.6); min-width: 30px;")
+        progress_text.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        progress_layout.addWidget(progress_text)
+
+        layout.addWidget(progress_container)
+
+        loading_dlg.textLayout.addWidget(main_widget)
+
+        return loading_dlg, status_label, progress_bar, progress_text
 
     def onAddAccount(self):
-        """添加账号 - 调用即梦登录机器人"""
-        try:
-            log.info("开始添加即梦账号...")
-            InfoBar.info(
-                title="正在登录",
-                content="请在浏览器中完成登录操作...",
-                parent=self,
-                duration=3000,
-                position=InfoBarPosition.TOP
+        """批量添加账号"""
+        dlg = AddAccountDialog(self)
+        if dlg.exec():
+            session_ids = dlg.get_session_ids()
+            if not session_ids:
+                InfoBar.warning(title="提示", content="请输入至少一个 Session ID", parent=self, position=InfoBarPosition.TOP)
+                return
+
+            # 创建加载对话框
+            loading_dlg, status_label, progress_bar, progress_text = self._create_loading_dialog(
+                len(session_ids), "正在添加账号"
             )
 
-            # 在新线程中执行登录
-            from PyQt5.QtCore import QThread
+            # 使用线程进行异步处理
+            from PyQt5.QtCore import QThread, pyqtSignal
 
-            class LoginThread(QThread):
-                finished = pyqtSignal(object)
+            class AddAccountsThread(QThread):
+                progress = pyqtSignal(int, int, str)  # (current, total, status)
+                finished = pyqtSignal(int, int)  # (success, failed)
+
+                def __init__(self, session_ids):
+                    super().__init__()
+                    self.session_ids = session_ids
 
                 def run(self):
-                    from app.robot.jimeng.jimeng_login_robot import JimengLoginRobot
-                    robot = JimengLoginRobot(headless=False)
-                    result = robot.login(timeout=300)
-                    self.finished.emit(result)
+                    try:
+                        from app.client.jimeng_api_client import get_jimeng_api_client
+                        client = get_jimeng_api_client()
+                        success_count = 0
+                        failed_count = 0
 
-            self.loginThread = LoginThread()
-            self.loginThread.finished.connect(self.onLoginFinished)
-            self.loginThread.start()
+                        for idx, session_id in enumerate(self.session_ids):
+                            try:
+                                self.progress.emit(idx + 1, len(self.session_ids), f"正在处理 ({idx + 1}/{len(self.session_ids)}): {session_id[:30]}")
 
-        except Exception as e:
-            log.error(f"添加账号失败: {e}")
-            InfoBar.error(
-                title="添加失败",
-                content=str(e),
-                parent=self,
-                position=InfoBarPosition.TOP
-            )
+                                # 查询积分
+                                total_credit = client.account_check(session_id)
 
-    def onLoginFinished(self, result):
-        """登录完成回调"""
-        try:
-            if result.is_success():
-                # 保存到数据库
-                account = JimengAccount.create(
-                    avatar=result.avatar,
-                    nickname=result.nickname,
-                    points=result.points,
-                    vip_type="标准会员" if result.is_vip else "普通会员",
-                    vip_expire_time=result.vip_expire_date,
-                    cookies=result.cookies
-                )
+                                # 创建账号
+                                account = JimengAccount.create_account(session_id=session_id)
+                                account.points = total_credit
+                                account.save()
 
-                log.info(f"账号添加成功: {result.nickname}")
-                InfoBar.success(
-                    title="添加成功",
-                    content=f"账号 {result.nickname} 已添加",
-                    parent=self,
-                    duration=3000,
-                    position=InfoBarPosition.TOP
-                )
+                                success_count += 1
+                            except Exception as e:
+                                log.error(f"处理账号 {session_id} 失败: {e}")
+                                failed_count += 1
 
-                # 刷新列表
+                        self.finished.emit(success_count, failed_count)
+
+                    except Exception as e:
+                        log.error(f"批量添加账号失败: {e}")
+                        self.finished.emit(0, len(self.session_ids))
+
+            def on_progress(current, total, status):
+                status_label.setText(status)
+                progress_bar.setValue(current)
+                percentage = int((current / total * 100)) if total > 0 else 0
+                progress_text.setText(f"{percentage}%")
+
+            def on_finished(success, failed):
+                loading_dlg.close()
                 self.loadAccounts()
-            else:
-                log.error(f"登录失败: {result.message}")
-                InfoBar.error(
-                    title="登录失败",
-                    content=result.message,
-                    parent=self,
-                    position=InfoBarPosition.TOP
-                )
+                if success > 0:
+                    message = f"成功添加 {success} 个账号"
+                    if failed > 0:
+                        message += f"，{failed} 个失败"
+                    InfoBar.success(
+                        title="批量添加完成",
+                        content=message,
+                        parent=self,
+                        duration=3000,
+                        position=InfoBarPosition.TOP
+                    )
+                else:
+                    InfoBar.error(
+                        title="批量添加失败",
+                        content=f"所有 {failed} 个账号添加失败",
+                        parent=self,
+                        position=InfoBarPosition.TOP
+                    )
 
-        except Exception as e:
-            log.error(f"保存账号失败: {e}")
-            InfoBar.error(
-                title="保存失败",
-                content=str(e),
-                parent=self,
-                position=InfoBarPosition.TOP
-            )
+            self.addThread = AddAccountsThread(session_ids)
+            self.addThread.progress.connect(on_progress)
+            self.addThread.finished.connect(on_finished)
+            self.addThread.start()
+
+            # 显示加载对话框
+            loading_dlg.exec()
 
     def onRefresh(self):
-        """刷新"""
-        log.info("刷新账号列表")
+        """刷新列表"""
         self.loadAccounts()
-        InfoBar.success(
-            title="刷新成功",
-            content="账号列表已更新",
-            parent=self,
-            duration=2000,
-            position=InfoBarPosition.TOP
-        )
+        InfoBar.success(title="刷新成功", content="账号列表已更新", parent=self, duration=2000, position=InfoBarPosition.TOP)
 
-    def onLogin(self, account_id):
-        """登录账号"""
+    def onCheckPoints(self):
+        """查询所有账号的积分"""
+        # 获取所有未删除的账号
         try:
-            log.info(f"登录账号: {account_id}")
+            all_accounts = JimengAccount.select().where(JimengAccount.is_deleted == 0)
+            account_ids = [acc.id for acc in all_accounts]
 
-            # 从数据库获取账号信息
-            account = JimengAccount.get_account_by_id(account_id)
-            if not account:
-                InfoBar.error(
-                    title="登录失败",
-                    content="账号不存在",
-                    parent=self,
-                    position=InfoBarPosition.TOP
-                )
+            if not account_ids:
+                InfoBar.warning(title="提示", content="没有可查询的账号", parent=self, position=InfoBarPosition.TOP)
                 return
 
-            if not account.cookies:
-                InfoBar.error(
-                    title="登录失败",
-                    content="该账号没有cookies信息",
-                    parent=self,
-                    position=InfoBarPosition.TOP
-                )
-                return
+            # 创建加载对话框
+            loading_dlg, status_label, progress_bar, progress_text = self._create_loading_dialog(
+                len(account_ids), "正在查询全部账号积分"
+            )
 
-            InfoBar.info(
-                title="正在登录",
-                content=f"正在打开 {account.nickname} 的登录窗口...",
+            # 使用线程进行异步处理
+            from PyQt5.QtCore import QThread, pyqtSignal
+
+            class CheckAllPointsThread(QThread):
+                progress = pyqtSignal(int, int, str)
+                finished = pyqtSignal(int, int)  # (success, failed)
+
+                def __init__(self, account_ids):
+                    super().__init__()
+                    self.account_ids = account_ids
+
+                def run(self):
+                    try:
+                        from app.client.jimeng_api_client import get_jimeng_api_client
+                        client = get_jimeng_api_client()
+                        success_count = 0
+                        failed_count = 0
+
+                        for idx, account_id in enumerate(self.account_ids):
+                            try:
+                                account = JimengAccount.get_account_by_id(account_id)
+                                if not account:
+                                    failed_count += 1
+                                    continue
+
+                                self.progress.emit(idx + 1, len(self.account_ids), f"正在查询 ({idx + 1}/{len(self.account_ids)})")
+
+                                total_credit = client.account_check(account.session_id)
+                                account.points = total_credit
+                                account.save()
+                                success_count += 1
+
+                            except Exception as e:
+                                log.error(f"查询账号 {account_id} 失败: {e}")
+                                failed_count += 1
+
+                        self.finished.emit(success_count, failed_count)
+
+                    except Exception as e:
+                        log.error(f"批量查询积分失败: {e}")
+                        self.finished.emit(0, len(self.account_ids))
+
+            def on_progress(current, total, status):
+                status_label.setText(status)
+                progress_bar.setValue(current)
+                percentage = int((current / total * 100)) if total > 0 else 0
+                progress_text.setText(f"{percentage}%")
+
+            def on_finished(success, failed):
+                loading_dlg.close()
+                self.loadAccounts()
+                if success > 0:
+                    message = f"成功查询 {success} 个账号"
+                    if failed > 0:
+                        message += f"，{failed} 个失败"
+                    InfoBar.success(
+                        title="查询完成",
+                        content=message,
+                        parent=self,
+                        duration=3000,
+                        position=InfoBarPosition.TOP
+                    )
+                else:
+                    InfoBar.error(
+                        title="查询失败",
+                        content=f"所有 {failed} 个账号查询失败",
+                        parent=self,
+                        position=InfoBarPosition.TOP
+                    )
+
+            self.checkThread = CheckAllPointsThread(account_ids)
+            self.checkThread.progress.connect(on_progress)
+            self.checkThread.finished.connect(on_finished)
+            self.checkThread.start()
+
+            # 显示加载对话框
+            loading_dlg.exec()
+
+        except Exception as e:
+            log.error(f"查询所有账号积分失败: {e}")
+            InfoBar.error(title="查询失败", content=str(e), parent=self, position=InfoBarPosition.TOP)
+
+    def onBatchDelete(self):
+        """批量删除"""
+        selected_ids = self._getSelectedAccountIds()
+        if not selected_ids:
+            InfoBar.warning(title="提示", content="请先勾选要删除的账号", parent=self, position=InfoBarPosition.TOP)
+            return
+
+        msg_box = MessageBox("确认删除", f"确定要删除选中的 {len(selected_ids)} 个账号吗？", self)
+        if msg_box.exec():
+            success_count = 0
+            for account_id in selected_ids:
+                if JimengAccount.delete_account(account_id):
+                    success_count += 1
+
+            self.loadAccounts()
+            InfoBar.success(
+                title="删除成功",
+                content=f"成功删除 {success_count} 个账号",
                 parent=self,
                 duration=2000,
                 position=InfoBarPosition.TOP
             )
 
-            # 在新线程中打开登录窗口，避免阻塞UI
-            from PyQt5.QtCore import QThread
+    def onSelectAllChanged(self, state):
+        """全选状态改变"""
+        checked = (state == Qt.Checked)
+        for row in range(self.table.rowCount()):
+            container = self.table.cellWidget(row, 0)
+            if container:
+                cb = container.findChild(CheckBox)
+                if cb:
+                    cb.setChecked(checked)
 
-            class LoginWindowThread(QThread):
-                finished = pyqtSignal()
-                error = pyqtSignal(str)
+    def _getSelectedAccountIds(self):
+        """获取选中的账号ID列表"""
+        ids = []
+        for row in range(self.table.rowCount()):
+            container = self.table.cellWidget(row, 0)
+            if container:
+                cb = container.findChild(CheckBox)
+                if cb and cb.isChecked():
+                    id_item = self.table.item(row, 1)
+                    if id_item:
+                        account_id = id_item.data(Qt.UserRole)
+                        if account_id:
+                            ids.append(int(account_id))
+        return ids
 
-                def __init__(self, cookies):
-                    super().__init__()
-                    self.cookies = cookies
-                    self.window = None  # 保存窗口实例
+    def showContextMenu(self, pos):
+        """显示右键菜单"""
+        item = self.table.itemAt(pos)
+        if not item:
+            return
 
-                def run(self):
-                    try:
-                        from app.robot.jimeng.jimeng_login_window import JimengLoginWindow
-                        self.window = JimengLoginWindow(self.cookies)
-                        self.window.open()  # 阻塞等待用户关闭
-                        self.finished.emit()
-                    except Exception as e:
-                        self.error.emit(str(e))
+        row = item.row()
+        id_item = self.table.item(row, 1)
+        if not id_item:
+            return
 
-            self.loginWindowThread = LoginWindowThread(account.cookies)
-            self.loginWindowThread.finished.connect(self.onLoginWindowClosed)
-            self.loginWindowThread.error.connect(self.onLoginWindowError)
-            self.loginWindowThread.start()
+        account_id = id_item.data(Qt.UserRole)
+        menu = RoundMenu(parent=self)
 
-        except Exception as e:
-            log.error(f"登录账号失败: {e}")
-            InfoBar.error(
-                title="登录失败",
-                content=str(e),
+        check_action = Action(FIF.CLOUD, "查询积分", self)
+        check_action.triggered.connect(lambda: self.onCheckSingleAccount(int(account_id)))
+        menu.addAction(check_action)
+
+        delete_action = Action(FIF.DELETE, "删除", self)
+        delete_action.triggered.connect(lambda: self.onDeleteAccount(int(account_id)))
+        menu.addAction(delete_action)
+
+        menu.exec(self.table.viewport().mapToGlobal(pos))
+
+    def onCheckSingleAccount(self, account_id: int):
+        """查询单个账号积分"""
+        try:
+            from app.client.jimeng_api_client import get_jimeng_api_client
+            account = JimengAccount.get_account_by_id(account_id)
+            if not account:
+                InfoBar.error(title="查询失败", content="账号不存在", parent=self, position=InfoBarPosition.TOP)
+                return
+
+            client = get_jimeng_api_client()
+            total_credit = client.account_check(account.session_id)
+            account.points = total_credit
+            account.save()
+
+            self.loadAccounts()
+            InfoBar.success(
+                title="查询成功",
+                content=f"账号 #{account_id} 积分: {total_credit}",
                 parent=self,
+                duration=3000,
                 position=InfoBarPosition.TOP
             )
 
-    def onLoginWindowClosed(self):
-        """登录窗口关闭回调"""
-        log.info("登录窗口已关闭")
-        InfoBar.success(
-            title="提示",
-            content="登录窗口已关闭",
-            parent=self,
-            duration=2000,
-            position=InfoBarPosition.TOP
-        )
+        except Exception as e:
+            log.error(f"查询积分失败: {e}")
+            InfoBar.error(title="查询失败", content=str(e), parent=self, position=InfoBarPosition.TOP)
 
-    def onLoginWindowError(self, error_msg):
-        """登录窗口错误回调"""
-        # 如果是用户主动关闭导致的错误，不显示错误提示
-        if "has been closed" in error_msg:
-            log.info("用户主动关闭了登录窗口")
-            return
+    def onDeleteAccount(self, account_id: int):
+        """删除单个账号"""
+        msg_box = MessageBox("确认删除", f"确定要删除账号 #{account_id} 吗？", self)
+        if msg_box.exec():
+            if JimengAccount.delete_account(account_id):
+                InfoBar.success(title="删除成功", content=f"账号 #{account_id} 已删除", parent=self, duration=2000, position=InfoBarPosition.TOP)
+                self.loadAccounts()
+            else:
+                InfoBar.error(title="删除失败", content="账号不存在", parent=self, position=InfoBarPosition.TOP)
 
-        log.error(f"登录窗口错误: {error_msg}")
-        InfoBar.error(
-            title="登录失败",
-            content=error_msg,
-            parent=self,
-            position=InfoBarPosition.TOP
-        )
+    def onPageSizeChanged(self, size):
+        """每页显示数量改变"""
+        self.page_size = int(size)
+        self.current_page = 1
+        self.loadAccounts()
 
-    def onDelete(self, account_id):
-        """删除账号"""
-        # 确认对话框
-        w = MessageBox(
-            "确认删除",
-            "确定要删除这个账号吗？",
-            self
-        )
+    def onPrevPage(self):
+        """上一页"""
+        if self.current_page > 1:
+            self.current_page -= 1
+            self.loadAccounts()
 
-        if w.exec():
-            try:
-                # 从数据库删除
-                if JimengAccount.delete_account(account_id):
-                    log.info(f"账号删除成功: {account_id}")
-                    InfoBar.success(
-                        title="删除成功",
-                        content="账号已删除",
-                        parent=self,
-                        duration=2000,
-                        position=InfoBarPosition.TOP
-                    )
-                    # 刷新列表
-                    self.loadAccounts()
-                else:
-                    InfoBar.error(
-                        title="删除失败",
-                        content="账号不存在",
-                        parent=self,
-                        position=InfoBarPosition.TOP
-                    )
-            except Exception as e:
-                log.error(f"删除账号失败: {e}")
-                InfoBar.error(
-                    title="删除失败",
-                    content=str(e),
-                    parent=self,
-                    position=InfoBarPosition.TOP
-                )
+    def onNextPage(self):
+        """下一页"""
+        self.current_page += 1
+        self.loadAccounts()

@@ -27,29 +27,23 @@ class JiMengIntlInterface(QWidget):
         layout.addWidget(self.stackedWidget)
 
         # 子页面
-        from app.view.jimeng_intl.agent_view import AgentView
         from app.view.jimeng_intl.image_gen_view import ImageGenIntlView
         from app.view.jimeng_intl.video_gen_view import VideoGenIntlView
-        from app.view.jimeng_intl.digital_human_view import DigitalHumanIntlView
         from app.view.jimeng_intl.account_manage_view import AccountManageIntlView
 
-        self.agentView = AgentView()
         self.imageGenView = ImageGenIntlView()
         self.videoGenView = VideoGenIntlView()
-        self.digitalHumanView = DigitalHumanIntlView()
         self.accountManageView = AccountManageIntlView()
 
         # 添加标签页
-        self.addSubInterface(self.agentView, "agentIntl", "Agent")
         self.addSubInterface(self.imageGenView, "imageGenIntl", "图片生成")
         self.addSubInterface(self.videoGenView, "videoGenIntl", "视频生成")
-        self.addSubInterface(self.digitalHumanView, "digitalHumanIntl", "数字人")
         self.addSubInterface(self.accountManageView, "accountManageIntl", "账号管理")
 
         # 默认选中
         self.stackedWidget.currentChanged.connect(self.onCurrentIndexChanged)
-        self.stackedWidget.setCurrentWidget(self.agentView)
-        self.pivot.setCurrentItem(self.agentView.objectName())
+        self.stackedWidget.setCurrentWidget(self.imageGenView)
+        self.pivot.setCurrentItem(self.imageGenView.objectName())
 
     def addSubInterface(self, widget: QWidget, objectName: str, text: str):
         """添加子界面"""

@@ -27,25 +27,18 @@ class JiMengInterface(QWidget):
 
         # 创建各个子页面
         from app.view.jimeng.image_gen_view import ImageGenView
+        from app.view.jimeng.account_manage_view import AccountManageView
+
         self.imageGenView = ImageGenView()
+        self.accountManageView = AccountManageView()
 
         self.videoGenView = QWidget()
         self.videoGenLayout = QVBoxLayout(self.videoGenView)
         self.videoGenLayout.setContentsMargins(40, 20, 40, 40)
 
-        self.digitalHumanView = QWidget()
-        self.digitalHumanLayout = QVBoxLayout(self.digitalHumanView)
-        self.digitalHumanLayout.setContentsMargins(40, 20, 40, 40)
-
-        # 账号管理页面
-        from app.view.jimeng.account_manage_view import AccountManageView
-        self.accountManageView = AccountManageView()
-        self.accountManageLayout = self.accountManageView.layout()
-
         # 添加标签页
         self.addSubInterface(self.imageGenView, "imageGen", "图片生成")
         self.addSubInterface(self.videoGenView, "videoGen", "视频生成")
-        self.addSubInterface(self.digitalHumanView, "digitalHuman", "数字人")
         self.addSubInterface(self.accountManageView, "accountManage", "账号管理")
 
         # 设置默认选中第一个标签页
@@ -67,7 +60,3 @@ class JiMengInterface(QWidget):
         """标签页切换事件"""
         widget = self.stackedWidget.widget(index)
         self.pivot.setCurrentItem(widget.objectName())
-
-        # 如果切换离开账号管理页面，通知其关闭浏览器
-        if widget != self.accountManageView and hasattr(self.accountManageView, 'closeLoginWindow'):
-            self.accountManageView.closeLoginWindow()

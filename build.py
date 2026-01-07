@@ -53,7 +53,7 @@ def main():
     if platform.system() == 'Darwin':  # macOS
         # macOS 使用 onedir 模式避免兼容性问题
         pyinstaller_cmd = [
-            'pyinstaller',
+            sys.executable, '-m', 'PyInstaller',
             '--onedir',            # macOS 使用目录模式
             '--windowed',          # 不显示控制台窗口
             '--name', 'VideoRobot',
@@ -62,7 +62,13 @@ def main():
             '--add-data', f'group_qrcode.png{os.pathsep}.',
             '--add-data', f'vx_qrcode.png{os.pathsep}.',
             '--add-data', f'app{os.pathsep}app',
+            '--copy-metadata=PyQt5',
+            '--copy-metadata=PyQt-Fluent-Widgets',
             '--hidden-import=PyQt5',
+            '--hidden-import=PyQt5.QtCore',
+            '--hidden-import=PyQt5.QtGui',
+            '--hidden-import=PyQt5.QtWidgets',
+            '--hidden-import=PyQt5.sip',
             '--hidden-import=qfluentwidgets',
             '--hidden-import=peewee',
             '--hidden-import=requests',
@@ -73,7 +79,7 @@ def main():
     else:  # Windows 和 Linux
         # Windows 和 Linux 使用 onefile 模式
         pyinstaller_cmd = [
-            'pyinstaller',
+            sys.executable, '-m', 'PyInstaller',
             '--onefile',           # 单文件模式
             '--windowed',          # 不显示控制台窗口
             '--name', 'VideoRobot',
@@ -82,7 +88,13 @@ def main():
             '--add-data', f'group_qrcode.png{os.pathsep}.',
             '--add-data', f'vx_qrcode.png{os.pathsep}.',
             '--add-data', f'app{os.pathsep}app',
+            '--copy-metadata=PyQt5',
+            '--copy-metadata=PyQt-Fluent-Widgets',
             '--hidden-import=PyQt5',
+            '--hidden-import=PyQt5.QtCore',
+            '--hidden-import=PyQt5.QtGui',
+            '--hidden-import=PyQt5.QtWidgets',
+            '--hidden-import=PyQt5.sip',
             '--hidden-import=qfluentwidgets',
             '--hidden-import=peewee',
             '--hidden-import=requests',

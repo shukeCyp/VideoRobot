@@ -9,6 +9,7 @@ from app.view.jimeng.add_image_task_dialog import MultiImageDropWidget
 from app.utils.logger import log
 import os
 import requests
+import re
 from app.constants import JIMENG_INTL_IMAGE_MODE_MAP
 
 
@@ -423,6 +424,9 @@ class ImageGenIntlView(QWidget):
 
                                 # 从 URL 提取文件名
                                 fname = os.path.basename(image_url.split('?')[0])
+                                # 处理文件名中的非法字符
+                                fname = re.sub(r'[<>:"/\\|?*]', '_', fname)
+
                                 if not fname.endswith(('.jpg', '.jpeg', '.png', '.gif')):
                                     fname = f"image_{idx + 1}.jpeg"
 

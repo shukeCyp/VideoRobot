@@ -9,11 +9,12 @@ project_root = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, project_root)
 
 # 设置Qt插件路径（解决跨平台问题）
-lib_folder = "Lib" if platform.system() == "Windows" else "lib"
-plugin_path = os.path.join(
-    sys.prefix, lib_folder, "site-packages", "PyQt5", "Qt5", "plugins"
-)
-os.environ["QT_QPA_PLATFORM_PLUGIN_PATH"] = plugin_path
+if not getattr(sys, 'frozen', False):
+    lib_folder = "Lib" if platform.system() == "Windows" else "lib"
+    plugin_path = os.path.join(
+        sys.prefix, lib_folder, "site-packages", "PyQt5", "Qt5", "plugins"
+    )
+    os.environ["QT_QPA_PLATFORM_PLUGIN_PATH"] = plugin_path
 
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QIcon

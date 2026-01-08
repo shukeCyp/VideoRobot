@@ -54,6 +54,10 @@ class GlobalTaskManager(QThread):
         from app.managers.jimeng_intl_image_task_executor import JimengIntlImageTaskExecutor
         self.executors.append(JimengIntlImageTaskExecutor())
 
+        # 注册即梦国际版视频生成任务执行器
+        from app.managers.jimeng_intl_video_task_executor import JimengIntlVideoTaskExecutor
+        self.executors.append(JimengIntlVideoTaskExecutor())
+
         log.info(f"已注册 {len(self.executors)} 个任务执行器")
 
     def set_max_workers(self, max_workers, save_config=True):

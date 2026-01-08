@@ -1,11 +1,13 @@
 # -*- coding: utf-8 -*-
 from PyQt5.QtCore import Qt
+from PyQt5.QtGui import QColor
 from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QTableWidgetItem, QHeaderView
 from qfluentwidgets import (PrimaryPushButton, PushButton, TableWidget, ComboBox,
                             FluentIcon as FIF, InfoBar, InfoBarPosition, Dialog,
                             BodyLabel, CheckBox, Action, RoundMenu, MessageBox, LineEdit)
 from app.models.jimeng_intl_account import JimengIntlAccount
 from app.utils.logger import log
+from datetime import datetime
 
 
 class AddAccountDialog(Dialog):
@@ -109,13 +111,9 @@ class AccountManageIntlView(QWidget):
         self.refreshBtn.clicked.connect(self.onRefresh)
         top.addWidget(self.refreshBtn)
 
-        self.checkPointsBtn = PushButton(FIF.CLOUD, "查询积分", self)
-        self.checkPointsBtn.clicked.connect(self.onCheckPoints)
-        top.addWidget(self.checkPointsBtn)
-
-        self.deleteBtn = PushButton(FIF.DELETE, "删除", self)
-        self.deleteBtn.clicked.connect(self.onBatchDelete)
-        top.addWidget(self.deleteBtn)
+        self.batchDeleteBtn = PushButton(FIF.DELETE, "批量删除", self)
+        self.batchDeleteBtn.clicked.connect(self.onBatchDelete)
+        top.addWidget(self.batchDeleteBtn)
 
         layout.addLayout(top)
 
@@ -124,8 +122,8 @@ class AccountManageIntlView(QWidget):
         self.table.setBorderVisible(True)
         self.table.setBorderRadius(8)
         self.table.setWordWrap(False)
-        self.table.setColumnCount(6)
-        self.table.setHorizontalHeaderLabels(["", "ID", "Session ID", "积分", "账号类型", "创建时间"])
+        self.table.setColumnCount(7)
+        self.table.setHorizontalHeaderLabels(["", "ID", "Session ID", "积分", "账号类型", "禁用状态", "操作"])
 
         header = self.table.horizontalHeader()
         header.setSectionResizeMode(0, QHeaderView.Fixed)
@@ -134,12 +132,14 @@ class AccountManageIntlView(QWidget):
         header.setSectionResizeMode(3, QHeaderView.Fixed)
         header.setSectionResizeMode(4, QHeaderView.Fixed)
         header.setSectionResizeMode(5, QHeaderView.Fixed)
+        header.setSectionResizeMode(6, QHeaderView.Fixed)
 
         self.table.setColumnWidth(0, 50)
         self.table.setColumnWidth(1, 60)
         self.table.setColumnWidth(3, 80)
         self.table.setColumnWidth(4, 100)
-        self.table.setColumnWidth(5, 200)
+        self.table.setColumnWidth(5, 100)
+        self.table.setColumnWidth(6, 200)
 
         self.table.verticalHeader().setVisible(False)
         self.table.setSelectionBehavior(TableWidget.SelectRows)
@@ -223,11 +223,47 @@ class AccountManageIntlView(QWidget):
                 type_item.setTextAlignment(Qt.AlignCenter)
                 self.table.setItem(row, 4, type_item)
 
-                # 创建时间
-                created_at = account.created_at.strftime("%Y-%m-%d %H:%M:%S") if account.created_at else "-"
-                time_item = QTableWidgetItem(created_at)
-                time_item.setTextAlignment(Qt.AlignCenter)
-                self.table.setItem(row, 5, time_item)
+                # 禁用状态
+                today = datetime.now().date()
+                is_disabled = account.disabled_at and account.disabled_at.date() <= today
+
+                status_item = QTableWidgetItem("禁用" if is_disabled else "正常")
+                status_item.setTextAlignment(Qt.AlignCenter)
+                status_item.setData(Qt.UserRole, account.id)
+
+                if is_disabled:
+                    status_item.setForeground(QColor("#FF3B30"))  # 红色
+                else:
+                    status_item.setForeground(QColor("#34C759"))  # 绿色
+
+                self.table.setItem(row, 5, status_item)
+
+                # 操作按钮
+                action_container = QWidget(self.table)
+                action_layout = QHBoxLayout(action_container)
+                action_layout.setContentsMargins(0, 0, 0, 0)
+                action_layout.setSpacing(5)
+                action_layout.setAlignment(Qt.AlignCenter)
+
+                # 积分按钮
+                points_btn = PushButton("积分", action_container)
+                points_btn.setFixedWidth(60)
+                points_btn.clicked.connect(lambda checked, aid=account.id: self.onCheckSingleAccount(aid))
+                action_layout.addWidget(points_btn)
+
+                # 禁用/解禁按钮
+                toggle_btn = PushButton("解禁" if is_disabled else "禁用", action_container)
+                toggle_btn.setFixedWidth(60)
+                toggle_btn.clicked.connect(lambda checked, aid=account.id: self.onToggleDisable(aid))
+                action_layout.addWidget(toggle_btn)
+
+                # 删除按钮
+                delete_btn = PushButton("删除", action_container)
+                delete_btn.setFixedWidth(60)
+                delete_btn.clicked.connect(lambda checked, aid=account.id: self.onDeleteAccount(aid))
+                action_layout.addWidget(delete_btn)
+
+                self.table.setCellWidget(row, 6, action_container)
 
             # 更新分页信息
             total_pages = (total_count + self.page_size - 1) // self.page_size if total_count > 0 else 1
@@ -339,6 +375,12 @@ class AccountManageIntlView(QWidget):
                                 account = JimengIntlAccount.create_account(session_id=session_id)
                                 account.points = total_credit
                                 account.account_type = 1 if total_credit > 0 else 0
+
+                                # 如果有积分账号的积分小于4，自动禁用
+                                if account.account_type == 1 and total_credit < 4:
+                                    account.disabled_at = datetime.now()
+                                    log.warning(f"新添加账号 {session_id[:30]} 积分不足({total_credit})，已自动禁用")
+
                                 account.save()
 
                                 success_count += 1
@@ -392,105 +434,6 @@ class AccountManageIntlView(QWidget):
         """刷新列表"""
         self.loadAccounts()
         InfoBar.success(title="刷新成功", content="账号列表已更新", parent=self, duration=2000, position=InfoBarPosition.TOP)
-
-    def onCheckPoints(self):
-        """查询所有账号的积分"""
-        # 获取所有未删除的账号
-        try:
-            all_accounts = JimengIntlAccount.select().where(JimengIntlAccount.is_deleted == 0)
-            account_ids = [acc.id for acc in all_accounts]
-
-            if not account_ids:
-                InfoBar.warning(title="提示", content="没有可查询的账号", parent=self, position=InfoBarPosition.TOP)
-                return
-
-            # 创建加载对话框
-            loading_dlg, status_label, progress_bar, progress_text = self._create_loading_dialog(
-                len(account_ids), "正在查询全部账号积分"
-            )
-
-            # 使用线程进行异步处理
-            from PyQt5.QtCore import QThread, pyqtSignal
-
-            class CheckAllPointsThread(QThread):
-                progress = pyqtSignal(int, int, str)
-                finished = pyqtSignal(int, int)  # (success, failed)
-
-                def __init__(self, account_ids):
-                    super().__init__()
-                    self.account_ids = account_ids
-
-                def run(self):
-                    try:
-                        from app.client.jimeng_api_client import get_jimeng_api_client
-                        client = get_jimeng_api_client()
-                        success_count = 0
-                        failed_count = 0
-
-                        for idx, account_id in enumerate(self.account_ids):
-                            try:
-                                account = JimengIntlAccount.get_account_by_id(account_id)
-                                if not account:
-                                    failed_count += 1
-                                    continue
-
-                                self.progress.emit(idx + 1, len(self.account_ids), f"正在查询 ({idx + 1}/{len(self.account_ids)})")
-
-                                total_credit = client.account_check(account.session_id)
-                                account.points = total_credit
-                                account.account_type = 1 if total_credit > 0 else 0
-                                account.save()
-                                success_count += 1
-
-                            except Exception as e:
-                                log.error(f"查询账号 {account_id} 失败: {e}")
-                                failed_count += 1
-
-                        self.finished.emit(success_count, failed_count)
-
-                    except Exception as e:
-                        log.error(f"批量查询积分失败: {e}")
-                        self.finished.emit(0, len(self.account_ids))
-
-            def on_progress(current, total, status):
-                status_label.setText(status)
-                progress_bar.setValue(current)
-                percentage = int((current / total * 100)) if total > 0 else 0
-                progress_text.setText(f"{percentage}%")
-
-            def on_finished(success, failed):
-                loading_dlg.close()
-                self.loadAccounts()
-                if success > 0:
-                    message = f"成功查询 {success} 个账号"
-                    if failed > 0:
-                        message += f"，{failed} 个失败"
-                    InfoBar.success(
-                        title="查询完成",
-                        content=message,
-                        parent=self,
-                        duration=3000,
-                        position=InfoBarPosition.TOP
-                    )
-                else:
-                    InfoBar.error(
-                        title="查询失败",
-                        content=f"所有 {failed} 个账号查询失败",
-                        parent=self,
-                        position=InfoBarPosition.TOP
-                    )
-
-            self.checkThread = CheckAllPointsThread(account_ids)
-            self.checkThread.progress.connect(on_progress)
-            self.checkThread.finished.connect(on_finished)
-            self.checkThread.start()
-
-            # 显示加载对话框
-            loading_dlg.exec()
-
-        except Exception as e:
-            log.error(f"查询所有账号积分失败: {e}")
-            InfoBar.error(title="查询失败", content=str(e), parent=self, position=InfoBarPosition.TOP)
 
     def onBatchDelete(self):
         """批量删除"""
@@ -577,12 +520,23 @@ class AccountManageIntlView(QWidget):
             total_credit = client.account_check(account.session_id)
             account.points = total_credit
             account.account_type = 1 if total_credit > 0 else 0
+
+            # 如果有积分账号的积分小于4，自动禁用
+            if account.account_type == 1 and total_credit < 4:
+                account.disabled_at = datetime.now()
+                log.warning(f"账号 {account_id} 积分不足({total_credit})，已自动禁用")
+
             account.save()
 
             self.loadAccounts()
+
+            message = f"账号 #{account_id} 积分: {total_credit}"
+            if account.account_type == 1 and total_credit < 4:
+                message += " (已自动禁用)"
+
             InfoBar.success(
                 title="查询成功",
-                content=f"账号 #{account_id} 积分: {total_credit}",
+                content=message,
                 parent=self,
                 duration=3000,
                 position=InfoBarPosition.TOP
@@ -591,6 +545,41 @@ class AccountManageIntlView(QWidget):
         except Exception as e:
             log.error(f"查询积分失败: {e}")
             InfoBar.error(title="查询失败", content=str(e), parent=self, position=InfoBarPosition.TOP)
+
+    def onToggleDisable(self, account_id: int):
+        """禁用/解禁账号"""
+        try:
+            account = JimengIntlAccount.get_account_by_id(account_id)
+            if not account:
+                InfoBar.error(title="错误", content="账号不存在", parent=self, position=InfoBarPosition.TOP)
+                return
+
+            today = datetime.now().date()
+            is_currently_disabled = account.disabled_at and account.disabled_at.date() <= today
+
+            if is_currently_disabled:
+                # 解禁：设置disabled_at为None
+                action_text = "解禁"
+                account.disabled_at = None
+            else:
+                # 禁用：设置disabled_at为今天
+                action_text = "禁用"
+                account.disabled_at = datetime.now()
+
+            account.save()
+            self.loadAccounts()
+
+            InfoBar.success(
+                title="操作成功",
+                content=f"账号 #{account_id} 已{action_text}",
+                parent=self,
+                duration=2000,
+                position=InfoBarPosition.TOP
+            )
+
+        except Exception as e:
+            log.error(f"禁用/解禁账号失败: {e}")
+            InfoBar.error(title="操作失败", content=str(e), parent=self, position=InfoBarPosition.TOP)
 
     def onDeleteAccount(self, account_id: int):
         """删除单个账号"""

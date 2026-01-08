@@ -6,6 +6,7 @@ from app.models.jimeng_image_task import JimengImageTask
 from app.utils.logger import log
 from app.models.jimeng_intl_account import JimengIntlAccount
 from app.models.jimeng_intl_image_task import JimengIntlImageTask
+from app.models.jimeng_intl_video_task import JimengIntlVideoTask
 
 
 def init_database():
@@ -19,7 +20,7 @@ def init_database():
             log.info(f"数据库已连接: {DB_PATH}")
 
         # 创建表
-        db.create_tables([Config, JimengAccount, JimengImageTask, JimengIntlAccount, JimengIntlImageTask], safe=True)
+        db.create_tables([Config, JimengAccount, JimengImageTask, JimengIntlAccount, JimengIntlImageTask, JimengIntlVideoTask], safe=True)
         log.info("数据库表创建成功")
 
     except Exception as e:

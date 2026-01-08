@@ -57,20 +57,34 @@ class VideoRobotWindow(MSFluentWindow):
         """初始化并启动任务管理器"""
         from app.managers.global_task_manager import get_global_task_manager
         from app.models.jimeng_intl_image_task import JimengIntlImageTask
+        from app.models.jimeng_intl_video_task import JimengIntlVideoTask
         from datetime import datetime
 
-        # 启动前将所有进行中的任务重置为排队中（状态 1 -> 0）
+        # 启动前将所有进行中的图片任务重置为排队中（状态 1 -> 0）
         try:
-            running_tasks = JimengIntlImageTask.select().where(JimengIntlImageTask.status == 1)
-            for task in running_tasks:
+            running_image_tasks = JimengIntlImageTask.select().where(JimengIntlImageTask.status == 1)
+            for task in running_image_tasks:
                 task.status = 0
                 task.update_at = datetime.now()
                 task.save()
-            count = running_tasks.count()
-            if count > 0:
-                log.info(f"启动前重置了 {count} 个进行中的任务为排队状态")
+            image_count = running_image_tasks.count()
+            if image_count > 0:
+                log.info(f"启动前重置了 {image_count} 个进行中的图片任务为排队状态")
         except Exception as e:
-            log.error(f"重置进行中的任务失败: {e}")
+            log.error(f"重置进行中的图片任务失败: {e}")
+
+        # 启动前将所有进行中的视频任务重置为排队中（状态 1 -> 0）
+        try:
+            running_video_tasks = JimengIntlVideoTask.select().where(JimengIntlVideoTask.status == 1)
+            for task in running_video_tasks:
+                task.status = 0
+                task.update_at = datetime.now()
+                task.save()
+            video_count = running_video_tasks.count()
+            if video_count > 0:
+                log.info(f"启动前重置了 {video_count} 个进行中的视频任务为排队状态")
+        except Exception as e:
+            log.error(f"重置进行中的视频任务失败: {e}")
 
         # 初始化并启动任务管理器
         self.task_manager = get_global_task_manager()
@@ -92,6 +106,9 @@ class VideoRobotWindow(MSFluentWindow):
 
     def initWindow(self):
         """初始化窗口"""
+        # 设置固定为暗色主题
+        setTheme(Theme.DARK)
+
         self.resize(1200, 800)
         self.setWindowTitle("视频机器人")
 

@@ -61,9 +61,12 @@ class JimengIntlAccount(Model):
         return list(rows), total
 
     @classmethod
-    def get_available_account(cls):
+    def get_available_account(cls, required_points: int = 0):
         """
         获取一个可用的账号（排除今天禁用的和已删除的）
+
+        Args:
+            required_points: 需要的积分数，默认为0（不检查积分）
 
         Returns:
             JimengIntlAccount: 可用的账号，如果没有返回None
@@ -71,17 +74,47 @@ class JimengIntlAccount(Model):
         today = datetime.now().date()
 
         # 优先选择有积分的账号，排除今天禁用的
-        account = cls.select().where(
+        query = cls.select().where(
             (cls.account_type == 1) &
             (cls.is_deleted == 0) &
             ((cls.disabled_at.is_null()) | (cls.disabled_at < today))
-        ).order_by(cls.points.desc()).first()
+        )
+
+        # 如果需要检查积分，过滤满足积分要求的账号
+        if required_points > 0:
+            query = query.where(cls.points >= required_points)
+
+        account = query.order_by(cls.points.desc()).first()
 
         if account:
             return account
 
         # 如果没有积分账号，选择任意可用账号
+        query = cls.select().where(
+            (cls.is_deleted == 0) &
+            ((cls.disabled_at.is_null()) | (cls.disabled_at < today))
+        )
+
+        # 如果需要检查积分，过滤满足积分要求的账号
+        if required_points > 0:
+            query = query.where(cls.points >= required_points)
+
+        account = query.order_by(cls.created_at.asc()).first()
+
+        return account
+
+    @classmethod
+    def get_available_account_for_nanobanana(cls):
+        """
+        获取一个无积分账号用于 NanoBanana 模型（排除今天禁用的和已删除的）
+
+        Returns:
+            JimengIntlAccount: 无积分账号，如果没有返回None
+        """
+        today = datetime.now().date()
+
         account = cls.select().where(
+            (cls.account_type == 0) &
             (cls.is_deleted == 0) &
             ((cls.disabled_at.is_null()) | (cls.disabled_at < today))
         ).order_by(cls.created_at.asc()).first()

@@ -1,26 +1,21 @@
 # -*- coding: utf-8 -*-
-from app.models.jimeng_intl_image_task import JimengIntlImageTask
+from app.models.jimeng_intl_video_task import JimengIntlVideoTask
 from app.models.jimeng_intl_account import JimengIntlAccount
 from app.client.jimeng_api_client import get_jimeng_api_client
 from app.utils.logger import log
 from datetime import datetime
 
 
-# 图片模型积分消耗映射表
-IMAGE_MODEL_POINTS_MAP = {
-    'jimeng-4.5': 12,
-    'jimeng-4.1': 4,
-    'jimeng-4.0': 4,
-    'nanobananapro': 12,
-    'nanobanana': 12,
-    'jimeng-3.1': 4,
-    'jimeng-3.0': 4,
-    'jimeng-2.0-pro': 4,
+# 视频模型积分消耗映射表
+VIDEO_MODEL_POINTS_MAP = {
+    'jimeng-video-veo3.1': 20,
+    'jimeng-video-sora2': 20,
+    'jimeng-video-3.0': 10,
 }
 
 
-class JimengIntlImageTaskExecutor:
-    """即梦国际版图片生成任务执行器"""
+class JimengIntlVideoTaskExecutor:
+    """即梦国际版视频生成任务执行器"""
 
     def __init__(self):
         """初始化执行器"""
@@ -28,7 +23,7 @@ class JimengIntlImageTaskExecutor:
 
     def get_task_type(self) -> str:
         """获取任务类型"""
-        return "jimeng_intl_image"
+        return "jimeng_intl_video"
 
     def get_pending_tasks(self, limit: int = 10) -> list:
         """
@@ -42,23 +37,23 @@ class JimengIntlImageTaskExecutor:
         """
         try:
             # 获取状态为0（排队中）的任务
-            tasks = JimengIntlImageTask.select().where(
-                (JimengIntlImageTask.status == 0) &
-                (JimengIntlImageTask.isdel == 0)
-            ).order_by(JimengIntlImageTask.create_at.asc()).limit(limit)
+            tasks = JimengIntlVideoTask.select().where(
+                (JimengIntlVideoTask.status == 0) &
+                (JimengIntlVideoTask.isdel == 0)
+            ).order_by(JimengIntlVideoTask.create_at.asc()).limit(limit)
 
             pending_list = list(tasks)
             if pending_list:
-                log.info(f"扫描到 {len(pending_list)} 个待处理的国际版图片生成任务")
+                log.info(f"扫描到 {len(pending_list)} 个待处理的国际版视频生成任务")
             return pending_list
 
         except Exception as e:
             log.error(f"获取待执行任务失败: {e}")
             return []
 
-    def execute_task(self, task: JimengIntlImageTask) -> bool:
+    def execute_task(self, task: JimengIntlVideoTask) -> bool:
         """
-        执行图片生成任务
+        执行视频生成任务
 
         Args:
             task: 任务对象
@@ -68,7 +63,7 @@ class JimengIntlImageTaskExecutor:
         """
         try:
             task_id = task.id
-            log.info(f"开始执行国际版图片生成任务: ID={task_id}")
+            log.info(f"开始执行国际版视频生成任务: ID={task_id}")
 
             # 更新任务状态为生成中（1）
             task.status = 1
@@ -77,35 +72,21 @@ class JimengIntlImageTaskExecutor:
             log.debug(f"任务 {task_id} 状态已更新为: 生成中")
 
             # 获取模型需要的积分
-            required_points = IMAGE_MODEL_POINTS_MAP.get(task.model.lower(), 4)
-            is_nanobana_model = task.model.lower() in ['nanobananapro', 'nanobanana']
+            required_points = VIDEO_MODEL_POINTS_MAP.get(task.model.lower(), 10)
             log.debug(f"任务 {task_id} 使用模型 {task.model}，需要 {required_points} 积分")
 
             # 获取账号信息
             if not task.account_id:
                 log.warning(f"任务 {task_id} 没有绑定账号，使用随机可用账号")
-
-                # 如果是 NanoBana 模型，只能用无积分账号
-                if is_nanobana_model:
-                    account = JimengIntlAccount.get_available_account_for_nanobanana()
-                    if not account:
-                        raise ValueError(f"NanoBanana 模型需要无积分账号，当前无可用账号")
-                else:
-                    # 其他模型优先用有积分的账号，再用无积分的
-                    account = JimengIntlAccount.get_available_account(required_points=required_points)
-                    if not account:
-                        raise ValueError(f"没有可用的账号（需要 {required_points} 积分，当前无满足条件的账号）")
-
+                account = JimengIntlAccount.get_available_account(required_points=required_points)
+                if not account:
+                    raise ValueError(f"没有可用的账号（需要 {required_points} 积分，当前无满足条件的账号）")
                 task.account_id = account.id
                 log.info(f"任务 {task_id} 已绑定账号 {account.id}，积分: {account.points}")
             else:
                 account = JimengIntlAccount.get_account_by_id(task.account_id)
                 if not account:
                     raise ValueError(f"账号不存在: {task.account_id}")
-
-                # NanoBana 模型不能用有积分账号
-                if is_nanobana_model and account.account_type == 1:
-                    raise ValueError(f"NanoBanana 模型不支持有积分账号")
 
                 # 有积分账号需要检查积分是否足够
                 if account.account_type == 1 and account.points < required_points:
@@ -114,15 +95,15 @@ class JimengIntlImageTaskExecutor:
             # 获取参考图片
             image_paths = task.get_input_images()
 
-            # 调用API生成图片
-            log.debug(f"任务 {task_id} 调用API生成图片，参考图片数: {len(image_paths) if image_paths else 0}")
-            result = self.client.generate_image(
+            # 调用API生成视频
+            log.debug(f"任务 {task_id} 调用API生成视频，参考图片数: {len(image_paths) if image_paths else 0}")
+            result = self.client.generate_video(
                 token=account.session_id,
                 prompt=task.prompt,
                 image_paths=image_paths,
                 ratio=task.ratio,
                 model=task.model,
-                resolution=task.resolution
+                duration=int(task.duration.rstrip('s'))  # 从 "5s" 转换为 5
             )
 
             if not result:
@@ -150,28 +131,28 @@ class JimengIntlImageTaskExecutor:
             task.code = str(code) if code else "0"
             task.message = result.get("message", "生成成功")
 
-            # 提取生成的图片URL
+            # 提取生成的视频URL
             output_urls = []
             if "data" in result and isinstance(result["data"], list):
                 for item in result["data"]:
                     if isinstance(item, dict) and "url" in item:
                         output_urls.append(item["url"])
-                        log.debug(f"任务 {task_id} 提取到图片URL: {item['url'][:80]}...")
+                        log.debug(f"任务 {task_id} 提取到视频URL: {item['url'][:80]}...")
 
-            # 检查是否成功获取输出图片
+            # 检查是否成功获取输出视频
             if not output_urls:
-                # 未获取到输出图片，标记为失败
-                log.warning(f"任务 {task_id} 未发现输出图片，标记为失败")
+                # 未获取到输出视频，标记为失败
+                log.warning(f"任务 {task_id} 未发现输出视频，标记为失败")
                 task.status = 3  # 失败
                 task.code = "no_output"
-                task.message = "API返回成功但未生成图片"
+                task.message = "API返回成功但未生成视频"
                 task.update_at = datetime.now()
                 task.save()
                 return False
 
-            # 保存输出图片URL到数据库
-            log.info(f"任务 {task_id} 成功生成 {len(output_urls)} 张图片")
-            task.set_output_images(output_urls)
+            # 保存输出视频URL到数据库
+            log.info(f"任务 {task_id} 成功生成 {len(output_urls)} 个视频")
+            task.set_output_videos(output_urls)
 
             task.update_at = datetime.now()
             task.save()
@@ -208,12 +189,3 @@ class JimengIntlImageTaskExecutor:
             except Exception as save_error:
                 log.error(f"保存任务失败状态出错: {save_error}")
             return False
-
-    def _get_available_account(self) -> JimengIntlAccount:
-        """
-        获取一个可用的账号（已废弃，使用 JimengIntlAccount.get_available_account()）
-
-        Returns:
-            JimengIntlAccount: 可用的账号，如果没有返回None
-        """
-        return JimengIntlAccount.get_available_account()

@@ -121,6 +121,78 @@ class SettingsInterface(ScrollArea):
         # 添加到布局
         self.expandLayout.addWidget(self.task_manager_group)
 
+        # 即梦国际版超时设置组
+        self.jimeng_intl_timeout_group = SettingCardGroup("即梦国际版超时设置", self.scrollWidget)
+
+        # 图片生成超时设置卡片
+        self.image_timeout_card = SettingCard(
+            FIF.PHOTO,
+            "图片生成超时",
+            "图片生成请求的超时时间（60-7200秒，默认300秒）",
+            self.jimeng_intl_timeout_group
+        )
+
+        # 创建图片超时设置容器
+        image_timeout_container = QWidget(self.image_timeout_card)
+        image_timeout_layout = QHBoxLayout(image_timeout_container)
+        image_timeout_layout.setContentsMargins(0, 0, 0, 0)
+        image_timeout_layout.setSpacing(10)
+
+        self.image_timeout_spin = SpinBox(image_timeout_container)
+        self.image_timeout_spin.setRange(60, 7200)
+        saved_image_timeout = config_manager.get_int("jimeng_intl_image_timeout", 300)
+        self.image_timeout_spin.setValue(saved_image_timeout)
+        self.image_timeout_spin.setFixedWidth(120)
+        image_timeout_layout.addWidget(self.image_timeout_spin)
+
+        self.image_timeout_unit_label = BodyLabel("秒", image_timeout_container)
+        image_timeout_layout.addWidget(self.image_timeout_unit_label)
+
+        self.image_timeout_save_btn = PrimaryPushButton(FIF.SAVE, "保存", image_timeout_container)
+        self.image_timeout_save_btn.clicked.connect(self.onSaveImageTimeout)
+        image_timeout_layout.addWidget(self.image_timeout_save_btn)
+
+        self.image_timeout_card.hBoxLayout.addWidget(image_timeout_container, 0, Qt.AlignRight)
+        self.image_timeout_card.hBoxLayout.addSpacing(16)
+
+        # 视频生成超时设置卡片
+        self.video_timeout_card = SettingCard(
+            FIF.VIDEO,
+            "视频生成超时",
+            "视频生成请求的超时时间（60-7200秒，默认600秒）",
+            self.jimeng_intl_timeout_group
+        )
+
+        # 创建视频超时设置容器
+        video_timeout_container = QWidget(self.video_timeout_card)
+        video_timeout_layout = QHBoxLayout(video_timeout_container)
+        video_timeout_layout.setContentsMargins(0, 0, 0, 0)
+        video_timeout_layout.setSpacing(10)
+
+        self.video_timeout_spin = SpinBox(video_timeout_container)
+        self.video_timeout_spin.setRange(60, 7200)
+        saved_video_timeout = config_manager.get_int("jimeng_intl_video_timeout", 600)
+        self.video_timeout_spin.setValue(saved_video_timeout)
+        self.video_timeout_spin.setFixedWidth(120)
+        video_timeout_layout.addWidget(self.video_timeout_spin)
+
+        self.video_timeout_unit_label = BodyLabel("秒", video_timeout_container)
+        video_timeout_layout.addWidget(self.video_timeout_unit_label)
+
+        self.video_timeout_save_btn = PrimaryPushButton(FIF.SAVE, "保存", video_timeout_container)
+        self.video_timeout_save_btn.clicked.connect(self.onSaveVideoTimeout)
+        video_timeout_layout.addWidget(self.video_timeout_save_btn)
+
+        self.video_timeout_card.hBoxLayout.addWidget(video_timeout_container, 0, Qt.AlignRight)
+        self.video_timeout_card.hBoxLayout.addSpacing(16)
+
+        # 添加到组
+        self.jimeng_intl_timeout_group.addSettingCard(self.image_timeout_card)
+        self.jimeng_intl_timeout_group.addSettingCard(self.video_timeout_card)
+
+        # 添加到布局
+        self.expandLayout.addWidget(self.jimeng_intl_timeout_group)
+
         # 日志管理设置组
         self.log_manager_group = SettingCardGroup("日志管理", self.scrollWidget)
 
@@ -259,6 +331,52 @@ class SettingsInterface(ScrollArea):
             position=InfoBarPosition.TOP,
             duration=3000
         )
+
+    def onSaveImageTimeout(self):
+        """保存图片生成超时设置"""
+        timeout = self.image_timeout_spin.value()
+        config_manager = get_config_manager()
+
+        if config_manager.set("jimeng_intl_image_timeout", timeout):
+            log.info(f"图片生成超时已设置为: {timeout}秒")
+            InfoBar.success(
+                title="保存成功",
+                content=f"图片生成超时已设置为 {timeout} 秒",
+                parent=self,
+                position=InfoBarPosition.TOP,
+                duration=3000
+            )
+        else:
+            InfoBar.error(
+                title="保存失败",
+                content="无法保存图片生成超时设置",
+                parent=self,
+                position=InfoBarPosition.TOP,
+                duration=3000
+            )
+
+    def onSaveVideoTimeout(self):
+        """保存视频生成超时设置"""
+        timeout = self.video_timeout_spin.value()
+        config_manager = get_config_manager()
+
+        if config_manager.set("jimeng_intl_video_timeout", timeout):
+            log.info(f"视频生成超时已设置为: {timeout}秒")
+            InfoBar.success(
+                title="保存成功",
+                content=f"视频生成超时已设置为 {timeout} 秒",
+                parent=self,
+                position=InfoBarPosition.TOP,
+                duration=3000
+            )
+        else:
+            InfoBar.error(
+                title="保存失败",
+                content="无法保存视频生成超时设置",
+                parent=self,
+                position=InfoBarPosition.TOP,
+                duration=3000
+            )
 
     def onRefreshLogInfo(self):
         """刷新日志信息"""

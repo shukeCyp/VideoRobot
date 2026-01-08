@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-from PyQt5.QtCore import Qt, QThread, pyqtSignal
+from PyQt5.QtCore import Qt, QThread, pyqtSignal, QTimer
 from PyQt5.QtGui import QPixmap, QColor
 from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QTableWidgetItem, QHeaderView, QLabel, QApplication, QFileDialog, QTableWidget, QAbstractItemView, QStackedWidget, QScrollArea, QGridLayout
 from datetime import datetime
@@ -31,6 +31,7 @@ class AddImageTaskIntlDialog(Dialog):
         self.model_combo.addItems(['nanobananapro', 'nanobanana', 'jimeng-4.5', 'jimeng-4.1', 'jimeng-4.0', 'jimeng-3.0'])
         self.model_combo.setCurrentText('jimeng-4.5')
         self.model_combo.setFixedWidth(180)
+        self.model_combo.currentTextChanged.connect(self.onModelChanged)
         model_layout.addWidget(self.model_combo)
         model_layout.addStretch()
         layout.addLayout(model_layout)
@@ -60,11 +61,9 @@ class AddImageTaskIntlDialog(Dialog):
         settings_layout.addWidget(self.ratio_combo)
 
         settings_layout.addSpacing(30)
-        quality_label = BodyLabel("清晰度 *", content)
-        settings_layout.addWidget(quality_label)
+        self.quality_label = BodyLabel("清晰度 *", content)
+        settings_layout.addWidget(self.quality_label)
         self.resolution_combo = ComboBox(content)
-        self.resolution_combo.addItems(['1k', '2k', '4k'])
-        self.resolution_combo.setCurrentText('2k')
         self.resolution_combo.setFixedWidth(120)
         settings_layout.addWidget(self.resolution_combo)
 
@@ -78,6 +77,36 @@ class AddImageTaskIntlDialog(Dialog):
         self.cancelButton.clicked.connect(self.reject)
         self.image_widget.images_changed.connect(self.onImagesChanged)
 
+        # 初始化清晰度选项
+        self.updateResolutionOptions()
+
+    def onModelChanged(self, model):
+        """模型更改时更新清晰度选项"""
+        self.updateResolutionOptions()
+
+    def updateResolutionOptions(self):
+        """根据选定的模型更新清晰度选项"""
+        model = self.model_combo.currentText().lower()
+        self.resolution_combo.clear()
+
+        # NanoBanana 不需要清晰度参数
+        if model == 'nanobanana':
+            self.quality_label.setVisible(False)
+            self.resolution_combo.setVisible(False)
+            self.resolution_combo.addItem('')
+        else:
+            self.quality_label.setVisible(True)
+            self.resolution_combo.setVisible(True)
+
+            # Image 3.x 系列支持 1K 和 2K
+            if model in ['jimeng-3.1', 'jimeng-3.0']:
+                self.resolution_combo.addItems(['1k', '2k'])
+                self.resolution_combo.setCurrentText('2k')
+            # 其他模型支持 2K 和 4K
+            else:
+                self.resolution_combo.addItems(['2k', '4k'])
+                self.resolution_combo.setCurrentText('2k')
+
     def on_add_task(self):
         prompt = self.prompt_edit.toPlainText().strip()
         if not prompt:
@@ -87,7 +116,13 @@ class AddImageTaskIntlDialog(Dialog):
         try:
             ratio_val = self.ratio_combo.currentText()
             model_val = self.model_combo.currentText()
-            resolution_val = self.resolution_combo.currentText()
+
+            # NanoBanana 模型不需要清晰度参数
+            if model_val.lower() == 'nanobanana':
+                resolution_val = '2k'  # 默认值，但实际不会使用
+            else:
+                resolution_val = self.resolution_combo.currentText()
+
             JimengIntlImageTask.create_task(
                 prompt=prompt,
                 account_id=None,
@@ -112,6 +147,16 @@ class ImageGenIntlView(QWidget):
         self.setObjectName("imageGenIntl")
         self.current_page = 1
         self.page_size = 20
+
+        # 用于智能刷新的数据缓存：{task_id: task_state}
+        # task_state 包含会影响UI的字段：status, code, message
+        self.task_cache = {}
+
+        # 添加自动刷新计时器
+        self.auto_refresh_timer = QTimer()
+        self.auto_refresh_timer.timeout.connect(self.onAutoRefresh)
+        self.auto_refresh_timer.start(5000)  # 5秒刷新一次
+
         self._initUI()
 
     def _initUI(self):
@@ -183,7 +228,7 @@ class ImageGenIntlView(QWidget):
         self.table.setColumnWidth(1, 60)
         self.table.setColumnWidth(2, 120)
         self.table.setColumnWidth(4, 120)
-        self.table.setColumnWidth(5, 220)
+        self.table.setColumnWidth(5, 280)
 
     def loadTasks(self):
         try:
@@ -271,14 +316,29 @@ class ImageGenIntlView(QWidget):
                 download_btn = PushButton("下载", action_container)
                 download_btn.setFixedWidth(60)
                 download_btn.clicked.connect(lambda checked, tid=task.id: self.onDownloadTask(tid))
+                download_btn.setEnabled(task.status == 2)  # 只有成功的任务才能下载
                 action_layout.addWidget(download_btn)
 
                 retry_btn = PushButton("重试", action_container)
                 retry_btn.setFixedWidth(60)
                 retry_btn.clicked.connect(lambda checked, tid=task.id: self.onRetryTask(tid))
+                retry_btn.setEnabled(task.status != 2)  # 成功的任务不能重试
                 action_layout.addWidget(retry_btn)
 
+                reason_btn = PushButton("原因", action_container)
+                reason_btn.setFixedWidth(60)
+                reason_btn.clicked.connect(lambda checked, tid=task.id: self.onShowFailReason(tid))
+                reason_btn.setEnabled(task.status != 2)  # 成功的任务不能查看原因
+                action_layout.addWidget(reason_btn)
+
                 self.table.setCellWidget(row, 5, action_container)
+
+                # 初始化缓存
+                self.task_cache[task.id] = {
+                    'status': task.status,
+                    'code': task.code,
+                    'message': task.message
+                }
 
                 # 已设置选择列居中，不重复创建容器
             total_pages = (total_count + self.page_size - 1) // self.page_size if total_count > 0 else 1
@@ -298,6 +358,79 @@ class ImageGenIntlView(QWidget):
     def onRefresh(self):
         self.loadTasks()
         InfoBar.success(title="刷新成功", content="任务列表已更新", parent=self, duration=2000, position=InfoBarPosition.TOP)
+
+    def onAutoRefresh(self):
+        """自动刷新任务列表（5秒一次，仅更新变化的任务）"""
+        try:
+            self.smartRefreshTasks()
+        except Exception as e:
+            log.debug(f"自动刷新任务列表失败: {e}")
+
+    def smartRefreshTasks(self):
+        """智能刷新：只更新有变化的任务行"""
+        try:
+            tasks, total_count = JimengIntlImageTask.get_tasks_by_page(self.current_page, self.page_size)
+
+            # 遍历当前显示的任务，检查是否有变化
+            for row, task in enumerate(tasks):
+                # 构建当前任务的状态快照
+                current_state = {
+                    'status': task.status,
+                    'code': task.code,
+                    'message': task.message
+                }
+
+                # 检查这个任务是否在缓存中且状态是否改变
+                task_id = task.id
+                if task_id in self.task_cache:
+                    cached_state = self.task_cache[task_id]
+                    # 如果状态没有变化，跳过这一行
+                    if cached_state == current_state:
+                        continue
+
+                # 状态有变化，更新缓存并刷新这一行
+                self.task_cache[task_id] = current_state
+                self.updateTaskRow(row, task)
+
+        except Exception as e:
+            log.debug(f"智能刷新失败: {e}")
+
+    def updateTaskRow(self, row: int, task):
+        """更新表格中的单一任务行"""
+        try:
+            # 更新状态列
+            status_map = {0: "排队中", 1: "生成中", 2: "已完成", 3: "失败"}
+            item_status = self.table.item(row, 4)
+            if item_status:
+                item_status.setText(status_map.get(task.status, "-"))
+                item_status.setData(Qt.UserRole, task.id)
+                item_status.setTextAlignment(Qt.AlignCenter)
+
+                # 根据状态设置文字颜色
+                if task.status == 2:  # 已完成
+                    item_status.setForeground(QColor("#34C759"))  # 绿色
+                elif task.status == 3:  # 失败
+                    item_status.setForeground(QColor("#FF3B30"))  # 红色
+                    # 如果失败，显示失败原因
+                    if task.message:
+                        item_status.setToolTip(f"失败原因: {task.message}")
+                else:
+                    item_status.setToolTip("")
+
+            # 更新操作按钮的启用状态
+            action_container = self.table.cellWidget(row, 5)
+            if action_container:
+                buttons = action_container.findChildren(PushButton)
+                for btn in buttons:
+                    if btn.text() == "下载":
+                        btn.setEnabled(task.status == 2)
+                    elif btn.text() == "重试":
+                        btn.setEnabled(task.status != 2)
+                    elif btn.text() == "原因":
+                        btn.setEnabled(task.status != 2)
+
+        except Exception as e:
+            log.debug(f"更新任务行失败: {e}")
 
     def showDownloadMessage(self, task_id: int):
         """显示下载提示信息"""
@@ -405,55 +538,75 @@ class ImageGenIntlView(QWidget):
                 """在子线程中下载任务图片"""
                 success_count = 0
                 fail_count = 0
+                max_retries = 3
 
                 try:
-                    # 创建目标文件夹，文件夹名为 task_{task_id}
-                    folder = os.path.join(download_folder, f"task_{task_id}")
-                    os.makedirs(folder, exist_ok=True)
+                    # 直接在下载文件夹中保存图片，不需要task_id子目录
+                    os.makedirs(download_folder, exist_ok=True)
 
                     for idx, image_url in enumerate(outputs):
-                        try:
-                            signal_emitter.progress.emit(idx, len(outputs))
+                        retry_count = 0
+                        downloaded = False
 
-                            # 检查是否是 URL
-                            if image_url.startswith("http://") or image_url.startswith("https://"):
-                                # 网络下载
-                                import requests
-                                response = requests.get(image_url, timeout=60)
-                                response.raise_for_status()
+                        while retry_count < max_retries and not downloaded:
+                            try:
+                                signal_emitter.progress.emit(idx, len(outputs))
 
-                                # 从 URL 提取文件名
-                                fname = os.path.basename(image_url.split('?')[0])
-                                # 处理文件名中的非法字符
-                                fname = re.sub(r'[<>:"/\\|?*]', '_', fname)
+                                # 检查是否是 URL
+                                if image_url.startswith("http://") or image_url.startswith("https://"):
+                                    # 网络下载
+                                    import requests
+                                    response = requests.get(image_url, timeout=60)
+                                    response.raise_for_status()
 
-                                if not fname.endswith(('.jpg', '.jpeg', '.png', '.gif')):
-                                    fname = f"image_{idx + 1}.jpeg"
+                                    # 从 URL 提取文件名
+                                    fname = os.path.basename(image_url.split('?')[0])
+                                    # 处理文件名中的非法字符
+                                    fname = re.sub(r'[<>:"/\\|?*]', '_', fname)
 
-                                filepath = os.path.join(folder, fname)
-                                with open(filepath, 'wb') as f:
-                                    f.write(response.content)
-                                success_count += 1
-                                log.debug(f"图片 {idx + 1} 下载成功: {filepath}")
-                            else:
-                                # 本地文件
-                                if image_url.lower().startswith("file:///"):
-                                    p = image_url[8:].replace('/', '\\')
-                                else:
-                                    p = image_url
+                                    if not fname.endswith(('.jpg', '.jpeg', '.png', '.gif')):
+                                        fname = f"task_{task_id}_image_{idx + 1}.jpeg"
 
-                                if os.path.exists(p):
-                                    fname = os.path.basename(p)
-                                    shutil.copy2(p, os.path.join(folder, fname))
+                                    filepath = os.path.join(download_folder, fname)
+                                    with open(filepath, 'wb') as f:
+                                        f.write(response.content)
+
+                                    # 下载完成后重命名
+                                    final_name = f"task_{task_id}_image_{idx + 1}.jpeg"
+                                    final_path = os.path.join(download_folder, final_name)
+                                    if filepath != final_path and os.path.exists(filepath):
+                                        os.rename(filepath, final_path)
+
                                     success_count += 1
-                                    log.debug(f"图片 {idx + 1} 下载成功: {fname}")
+                                    log.debug(f"图片 {idx + 1} 下载成功: {final_path}")
+                                    downloaded = True
                                 else:
-                                    fail_count += 1
-                                    log.warning(f"图片 {idx + 1} 文件不存在: {p}")
+                                    # 本地文件
+                                    if image_url.lower().startswith("file:///"):
+                                        p = image_url[8:].replace('/', '\\')
+                                    else:
+                                        p = image_url
 
-                        except Exception as e:
-                            log.error(f"下载图片 {idx + 1} 失败: {e}")
-                            fail_count += 1
+                                    if os.path.exists(p):
+                                        final_name = f"task_{task_id}_image_{idx + 1}{os.path.splitext(p)[1]}"
+                                        final_path = os.path.join(download_folder, final_name)
+                                        shutil.copy2(p, final_path)
+                                        success_count += 1
+                                        log.debug(f"图片 {idx + 1} 下载成功: {final_path}")
+                                        downloaded = True
+                                    else:
+                                        fail_count += 1
+                                        log.warning(f"图片 {idx + 1} 文件不存在: {p}")
+                                        downloaded = True
+
+                            except Exception as e:
+                                retry_count += 1
+                                if retry_count < max_retries:
+                                    log.warning(f"下载图片 {idx + 1} 失败（第{retry_count}次），准备重试: {e}")
+                                else:
+                                    log.error(f"下载图片 {idx + 1} 失败，已达最大重试次数({max_retries}): {e}")
+                                    fail_count += 1
+                                    downloaded = True
 
                     signal_emitter.progress.emit(len(outputs), len(outputs))
 
@@ -507,6 +660,30 @@ class ImageGenIntlView(QWidget):
             log.error(f"重新执行任务失败: {e}")
             InfoBar.error(title="重试失败", content=str(e), parent=self, position=InfoBarPosition.TOP)
 
+    def onShowFailReason(self, task_id: int):
+        """显示失败原因"""
+        try:
+            task = JimengIntlImageTask.get_task_by_id(task_id)
+            if not task:
+                InfoBar.error(title="错误", content="任务不存在", parent=self, position=InfoBarPosition.TOP)
+                return
+
+            reason = task.message or "暂无失败原因记录"
+            code = task.code or ""
+
+            content = reason
+            if code:
+                content = f"错误码: {code}\n\n{reason}"
+
+            msg_box = MessageBox("失败原因", content, self)
+            msg_box.cancelButton.setVisible(False)
+            msg_box.yesButton.setText("确定")
+            msg_box.exec()
+
+        except Exception as e:
+            log.error(f"获取失败原因失败: {e}")
+            InfoBar.error(title="错误", content=str(e), parent=self, position=InfoBarPosition.TOP)
+
     def onPageSizeChanged(self, size):
         self.page_size = int(size)
         self.current_page = 1
@@ -520,6 +697,18 @@ class ImageGenIntlView(QWidget):
     def onNextPage(self):
         self.current_page += 1
         self.loadTasks()
+
+    def showEvent(self, event):
+        """界面显示时启动自动刷新"""
+        super().showEvent(event)
+        if hasattr(self, 'auto_refresh_timer') and not self.auto_refresh_timer.isActive():
+            self.auto_refresh_timer.start(5000)
+
+    def hideEvent(self, event):
+        """界面隐藏时停止自动刷新"""
+        super().hideEvent(event)
+        if hasattr(self, 'auto_refresh_timer') and self.auto_refresh_timer.isActive():
+            self.auto_refresh_timer.stop()
 
     def resizeEvent(self, e):
         super().resizeEvent(e)
@@ -639,6 +828,7 @@ class ImageGenIntlView(QWidget):
             import requests
             completed = 0
             failed = 0
+            max_retries = 3
 
             for idx, task_id in enumerate(selected_ids):
                 try:
@@ -654,41 +844,64 @@ class ImageGenIntlView(QWidget):
                         signal_emitter.progress.emit(idx + 1, len(selected_ids))
                         continue
 
-                    folder = os.path.join(download_folder, f"task_{task_id}")
-                    os.makedirs(folder, exist_ok=True)
+                    os.makedirs(download_folder, exist_ok=True)
 
-                    for p in outputs:
-                        try:
-                            # 检查是否是 URL
-                            if p.startswith("http://") or p.startswith("https://"):
-                                # 网络下载
-                                response = requests.get(p, timeout=60)
-                                response.raise_for_status()
+                    for img_idx, p in enumerate(outputs):
+                        retry_count = 0
+                        downloaded = False
 
-                                # 从 URL 提取文件名
-                                fname = os.path.basename(p.split('?')[0])
-                                if not fname.endswith(('.jpg', '.jpeg', '.png', '.gif')):
-                                    fname = f"image_{len(os.listdir(folder)) + 1}.jpeg"
+                        while retry_count < max_retries and not downloaded:
+                            try:
+                                # 检查是否是 URL
+                                if p.startswith("http://") or p.startswith("https://"):
+                                    # 网络下载
+                                    response = requests.get(p, timeout=60)
+                                    response.raise_for_status()
 
-                                filepath = os.path.join(folder, fname)
-                                with open(filepath, 'wb') as f:
-                                    f.write(response.content)
-                                log.debug(f"图片下载成功: {filepath}")
-                            else:
-                                # 本地文件
-                                if p.lower().startswith("file:///"):
-                                    p2 = p[8:].replace('/', '\\')
+                                    # 从 URL 提取文件名
+                                    fname = os.path.basename(p.split('?')[0])
+                                    # 处理文件名中的非法字符
+                                    fname = re.sub(r'[<>:"/\\|?*]', '_', fname)
+
+                                    if not fname.endswith(('.jpg', '.jpeg', '.png', '.gif')):
+                                        fname = f"task_{task_id}_image_{img_idx + 1}.jpeg"
+
+                                    filepath = os.path.join(download_folder, fname)
+                                    with open(filepath, 'wb') as f:
+                                        f.write(response.content)
+
+                                    # 下载完成后重命名
+                                    final_name = f"task_{task_id}_image_{img_idx + 1}.jpeg"
+                                    final_path = os.path.join(download_folder, final_name)
+                                    if filepath != final_path and os.path.exists(filepath):
+                                        os.rename(filepath, final_path)
+
+                                    log.debug(f"图片下载成功: {final_path}")
+                                    downloaded = True
                                 else:
-                                    p2 = p
+                                    # 本地文件
+                                    if p.lower().startswith("file:///"):
+                                        p2 = p[8:].replace('/', '\\')
+                                    else:
+                                        p2 = p
 
-                                if os.path.exists(p2):
-                                    fname = os.path.basename(p2)
-                                    shutil.copy2(p2, os.path.join(folder, fname))
-                                    log.debug(f"文件复制成功: {fname}")
+                                    if os.path.exists(p2):
+                                        final_name = f"task_{task_id}_image_{img_idx + 1}{os.path.splitext(p2)[1]}"
+                                        final_path = os.path.join(download_folder, final_name)
+                                        shutil.copy2(p2, final_path)
+                                        log.debug(f"文件复制成功: {final_path}")
+                                        downloaded = True
+                                    else:
+                                        log.warning(f"文件不存在: {p2}")
+                                        downloaded = True
+
+                            except Exception as e:
+                                retry_count += 1
+                                if retry_count < max_retries:
+                                    log.warning(f"图片 {img_idx + 1} 下载失败（第{retry_count}次），准备重试: {e}")
                                 else:
-                                    log.warning(f"文件不存在: {p2}")
-                        except Exception as e:
-                            log.error(f"下载或复制文件失败: {e}")
+                                    log.error(f"图片 {img_idx + 1} 下载失败，已达最大重试次数({max_retries}): {e}")
+                                    downloaded = True
 
                     completed += 1
                     log.debug(f"任务 {task_id} 下载完成")
@@ -854,6 +1067,7 @@ class _ModelRatioResolutionMixin:
         self.model_combo.addItems(['nanobananapro', 'nanobanana', 'jimeng-4.5', 'jimeng-4.1', 'jimeng-4.0', 'jimeng-3.0'])
         self.model_combo.setCurrentText('jimeng-4.5')
         self.model_combo.setFixedWidth(160)
+        self.model_combo.currentTextChanged.connect(self._on_model_changed)
         ml.addWidget(self.model_combo)
 
         ml.addSpacing(15)
@@ -865,19 +1079,45 @@ class _ModelRatioResolutionMixin:
         ml.addWidget(self.ratio_combo)
 
         ml.addSpacing(15)
-        ml.addWidget(BodyLabel("清晰度:", owner))
+        self.quality_label = BodyLabel("清晰度:", owner)
+        ml.addWidget(self.quality_label)
         self.resolution_combo = ComboBox(owner)
-        self.resolution_combo.addItems(['1k', '2k', '4k'])
-        self.resolution_combo.setCurrentText('2k')
         self.resolution_combo.setFixedWidth(100)
         ml.addWidget(self.resolution_combo)
 
         ml.addStretch()
+
+        # 初始化清晰度选项
+        self._update_resolution_options()
+
         return ml
 
-    def _on_model_changed(self, m):
-        # 已弃用，保留以兼容旧代码
-        pass
+    def _update_resolution_options(self):
+        """根据选定的模型更新清晰度选项"""
+        model = self.model_combo.currentText().lower()
+        self.resolution_combo.clear()
+
+        # NanoBanana 不需要清晰度参数
+        if model == 'nanobanana':
+            self.quality_label.setVisible(False)
+            self.resolution_combo.setVisible(False)
+            self.resolution_combo.addItem('')
+        else:
+            self.quality_label.setVisible(True)
+            self.resolution_combo.setVisible(True)
+
+            # Image 3.x 系列支持 1K 和 2K
+            if model in ['jimeng-3.1', 'jimeng-3.0']:
+                self.resolution_combo.addItems(['1k', '2k'])
+                self.resolution_combo.setCurrentText('2k')
+            # 其他模型支持 2K 和 4K
+            else:
+                self.resolution_combo.addItems(['2k', '4k'])
+                self.resolution_combo.setCurrentText('2k')
+
+    def _on_model_changed(self, model):
+        """模型更改时更新清晰度选项"""
+        self._update_resolution_options()
 
 class _FolderImportIntlWidget(QWidget, _ModelRatioResolutionMixin):
     def __init__(self, parent=None):
@@ -940,36 +1180,43 @@ class _FolderImportIntlWidget(QWidget, _ModelRatioResolutionMixin):
             })
         return tasks
 
-class _TableImportIntlWidget(QWidget, _ModelRatioResolutionMixin):
+class _TableImportIntlWidget(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.excel_path = ""
         self._initUI()
+
     def _initUI(self):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(15, 10, 15, 10)
         layout.setSpacing(10)
+
+        # 文件选择和模板下载按钮行
         fl = QHBoxLayout()
         fl.addWidget(BodyLabel("选择文件:", self))
         self.file_edit = LineEdit(self)
         self.file_edit.setReadOnly(True)
         fl.addWidget(self.file_edit)
+
         btn = PushButton(FIF.DOCUMENT, "浏览", self)
         btn.clicked.connect(self._on_select_file)
         fl.addWidget(btn)
+
+        template_btn = PushButton(FIF.DOWNLOAD, "表格模板", self)
+        template_btn.clicked.connect(self._on_download_template)
+        fl.addWidget(template_btn)
+
         layout.addLayout(fl)
-        layout.addLayout(self._init_mrr(self))
+
+        # 预览表格
         self.preview_table = QTableWidget(self)
-        self.preview_table.setColumnCount(5)
-        self.preview_table.setHorizontalHeaderLabels(['提示词', '模型', '参考图片路径', '分辨率比例', '清晰度'])
+        self.preview_table.setColumnCount(3)
+        self.preview_table.setHorizontalHeaderLabels(['提示词', '模型', '参考图片路径'])
         h = self.preview_table.horizontalHeader()
         h.setSectionResizeMode(0, QHeaderView.Stretch)
-        h.setSectionResizeMode(1, QHeaderView.Interactive)
+        h.setSectionResizeMode(1, QHeaderView.Fixed)
         h.setSectionResizeMode(2, QHeaderView.Stretch)
-        h.setSectionResizeMode(3, QHeaderView.Fixed)
-        h.setSectionResizeMode(4, QHeaderView.Fixed)
-        self.preview_table.setColumnWidth(3, 80)
-        self.preview_table.setColumnWidth(4, 100)
+        self.preview_table.setColumnWidth(1, 150)
         self.preview_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.preview_table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.preview_table.setStyleSheet(
@@ -984,62 +1231,149 @@ class _TableImportIntlWidget(QWidget, _ModelRatioResolutionMixin):
             "QHeaderView::section{background-color:#303030;color:#dcdcdc;border:0px;border-bottom:1px solid #3a3a3a;padding:8px 6px;}"
         )
         layout.addWidget(self.preview_table)
-        self.status_label = BodyLabel("请选择Excel文件", self)
+
+        self.status_label = BodyLabel("请选择CSV文件", self)
         layout.addWidget(self.status_label)
+        layout.addStretch()
+
+    def _on_download_template(self):
+        """下载CSV模板"""
+        import csv
+
+        save_path, _ = QFileDialog.getSaveFileName(
+            self, "保存CSV模板", "", "CSV Files (*.csv)"
+        )
+
+        if not save_path:
+            return
+
+        try:
+            # 确保文件以 .csv 结尾
+            if not save_path.lower().endswith('.csv'):
+                save_path += '.csv'
+
+            with open(save_path, 'w', newline='', encoding='utf-8-sig') as f:
+                writer = csv.writer(f)
+                # 写入表头
+                writer.writerow(['提示词', '模型', '参考图片路径'])
+                # 写入示例数据
+                writer.writerow([
+                    '一只可爱的小猫咪',
+                    'jimeng-4.5',
+                    'C:\\images\\cat.jpg'
+                ])
+                writer.writerow([
+                    '蓝天白云',
+                    'jimeng-3.0',
+                    'C:\\images\\sky.jpg'
+                ])
+
+            InfoBar.success(
+                title="成功",
+                content=f"模板已保存到：{save_path}",
+                parent=self,
+                duration=3000,
+                position=InfoBarPosition.TOP
+            )
+        except Exception as e:
+            log.error(f"保存模板失败: {e}")
+            InfoBar.error(
+                title="失败",
+                content=f"保存模板失败：{str(e)}",
+                parent=self,
+                position=InfoBarPosition.TOP
+            )
+
     def _on_select_file(self):
-        fp, _ = QFileDialog.getOpenFileName(self, "选择Excel文件", "", "Excel Files (*.xlsx *.xls)")
+        fp, _ = QFileDialog.getOpenFileName(self, "选择CSV文件", "", "CSV Files (*.csv)")
         if fp:
             self.excel_path = fp
             self.file_edit.setText(fp)
-            self._load_excel()
-    def _load_excel(self):
+            self._load_csv()
+
+    def _load_csv(self):
         try:
-            import pandas as pd
-            df = pd.read_excel(self.excel_path)
-            req = ['提示词', '模型']
-            miss = [c for c in req if c not in df.columns]
-            if miss:
-                self.status_label.setText(f"缺少必需列: {', '.join(miss)}")
-                return
+            import csv
+
             self.preview_table.setRowCount(0)
-            for _, row in df.iterrows():
-                r = self.preview_table.rowCount()
-                self.preview_table.insertRow(r)
-                self.preview_table.setItem(r, 0, QTableWidgetItem(str(row.get('提示词', ''))))
-                self.preview_table.setItem(r, 1, QTableWidgetItem(str(row.get('模型', ''))))
-                self.preview_table.setItem(r, 2, QTableWidgetItem(str(row.get('参考图片路径', ''))))
-                self.preview_table.setItem(r, 3, QTableWidgetItem(str(row.get('分辨率比例', ''))))
-                self.preview_table.setItem(r, 4, QTableWidgetItem(str(row.get('清晰度', ''))))
-            self.status_label.setText(f"成功加载 {len(df)} 条记录")
+            rows = []
+
+            with open(self.excel_path, 'r', encoding='utf-8') as f:
+                reader = csv.reader(f)
+                # 跳过表头
+                next(reader, None)
+
+                for row in reader:
+                    if len(row) >= 3:
+                        rows.append(row)
+
+            if not rows:
+                self.status_label.setText("CSV文件为空或格式不正确")
+                return
+
+            # 填充预览表格
+            for row_idx, row in enumerate(rows):
+                self.preview_table.insertRow(row_idx)
+                self.preview_table.setItem(row_idx, 0, QTableWidgetItem(row[0]))
+                self.preview_table.setItem(row_idx, 1, QTableWidgetItem(row[1]))
+                self.preview_table.setItem(row_idx, 2, QTableWidgetItem(row[2]))
+
+            self.status_label.setText(f"成功加载 {len(rows)} 条记录")
         except Exception as e:
+            log.error(f"加载CSV文件失败: {e}")
             self.status_label.setText(f"加载失败: {str(e)}")
+
     def get_tasks_data(self):
         if not self.excel_path:
             return []
+
         try:
-            import pandas as pd
-            df = pd.read_excel(self.excel_path)
+            import csv
+
             tasks = []
-            for _, row in df.iterrows():
-                imgs = []
-                ips = str(row.get('参考图片路径', '')).strip()
-                if ips and ips != 'nan':
-                    s = ips.replace('；', ';').replace('，', ',')
-                    if ';' in s:
-                        imgs = [p.strip() for p in s.split(';') if p.strip()]
-                    elif ',' in s:
-                        imgs = [p.strip() for p in s.split(',') if p.strip()]
-                    else:
-                        imgs = [s]
-                tasks.append({
-                    'prompt': str(row.get('提示词', '')),
-                    'model': str(row.get('模型', self.model_combo.currentText())),
-                    'ratio': str(row.get('分辨率比例', self.ratio_combo.currentText())),
-                    'resolution': str(row.get('清晰度', self.resolution_combo.currentText())),
-                    'input_images': imgs
-                })
+            with open(self.excel_path, 'r', encoding='utf-8') as f:
+                reader = csv.reader(f)
+                # 跳过表头
+                next(reader, None)
+
+                for row in reader:
+                    if len(row) >= 3:
+                        prompt = row[0].strip()
+                        model = row[1].strip()
+                        img_paths_str = row[2].strip()
+
+                        if not prompt or not model:
+                            continue
+
+                        # 处理图片路径（支持分号或逗号分隔）
+                        imgs = []
+                        if img_paths_str and img_paths_str != 'nan':
+                            img_paths_str = img_paths_str.replace('；', ';').replace('，', ',')
+                            if ';' in img_paths_str:
+                                imgs = [p.strip() for p in img_paths_str.split(';') if p.strip()]
+                            elif ',' in img_paths_str:
+                                imgs = [p.strip() for p in img_paths_str.split(',') if p.strip()]
+                            else:
+                                imgs = [img_paths_str]
+
+                        # 确定清晰度（根据模型）
+                        model_lower = model.lower()
+                        if model_lower in ['jimeng-3.1', 'jimeng-3.0']:
+                            resolution = '2k'  # 默认2k
+                        else:
+                            resolution = '2k'  # 默认2k
+
+                        tasks.append({
+                            'prompt': prompt,
+                            'model': model,
+                            'ratio': '1:1',  # 默认比例
+                            'resolution': resolution,
+                            'input_images': imgs
+                        })
+
             return tasks
-        except Exception:
+        except Exception as e:
+            log.error(f"解析CSV文件失败: {e}")
             return []
 
 class _TextPromptImportIntlWidget(QWidget, _ModelRatioResolutionMixin):

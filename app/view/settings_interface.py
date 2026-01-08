@@ -3,7 +3,7 @@ from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QFileDial
 from qfluentwidgets import (ScrollArea, ExpandLayout, SettingCardGroup, SettingCard,
                             SpinBox, BodyLabel, PrimaryPushButton, LineEdit,
                             InfoBar, InfoBarPosition, FluentIcon as FIF,
-                            MessageBox, SwitchButton)
+                            MessageBox, SwitchButton, ComboBox, setTheme, Theme)
 from app.utils.logger import log
 from app.utils.log_manager import get_log_manager
 from app.utils.config_manager import get_config_manager
@@ -83,6 +83,46 @@ class SettingsInterface(ScrollArea):
 
         # 添加到布局
         self.expandLayout.addWidget(self.jimeng_api_group)
+
+        # 外观设置组
+        self.appearance_group = SettingCardGroup("外观设置", self.scrollWidget)
+
+        # 主题设置卡片
+        self.theme_card = SettingCard(
+            FIF.BRUSH,
+            "应用主题",
+            "选择应用的主题模式",
+            self.appearance_group
+        )
+
+        # 创建主题设置容器
+        theme_container = QWidget(self.theme_card)
+        theme_layout = QHBoxLayout(theme_container)
+        theme_layout.setContentsMargins(0, 0, 0, 0)
+        theme_layout.setSpacing(10)
+
+        self.theme_combo = ComboBox(theme_container)
+        self.theme_combo.addItems(["深色", "浅色", "跟随系统"])
+        self.theme_combo.setFixedWidth(150)
+
+        # 从配置加载保存的主题设置
+        saved_theme = config_manager.get("app_theme", "dark")
+        theme_index = {"dark": 0, "light": 1, "auto": 2}.get(saved_theme, 0)
+        self.theme_combo.setCurrentIndex(theme_index)
+
+        # 连接信号
+        self.theme_combo.currentIndexChanged.connect(self.onThemeChanged)
+
+        theme_layout.addWidget(self.theme_combo)
+
+        self.theme_card.hBoxLayout.addWidget(theme_container, 0, Qt.AlignRight)
+        self.theme_card.hBoxLayout.addSpacing(16)
+
+        # 添加到组
+        self.appearance_group.addSettingCard(self.theme_card)
+
+        # 添加到布局
+        self.expandLayout.addWidget(self.appearance_group)
 
         # 任务管理器设置组
         self.task_manager_group = SettingCardGroup("任务管理器", self.scrollWidget)
@@ -314,6 +354,34 @@ class SettingsInterface(ScrollArea):
                 position=InfoBarPosition.TOP,
                 duration=3000
             )
+
+    def onThemeChanged(self, index):
+        """主题切换处理"""
+        config_manager = get_config_manager()
+        theme_map = {0: "dark", 1: "light", 2: "auto"}
+        theme_value = theme_map.get(index, "dark")
+
+        # 保存配置
+        config_manager.set("app_theme", theme_value)
+
+        # 应用主题
+        if theme_value == "dark":
+            setTheme(Theme.DARK)
+        elif theme_value == "light":
+            setTheme(Theme.LIGHT)
+        else:  # auto - 跟随系统
+            setTheme(Theme.AUTO)
+
+        theme_names = {0: "深色", 1: "浅色", 2: "跟随系统"}
+        log.info(f"应用主题已切换为: {theme_names.get(index, '未知')}")
+
+        InfoBar.success(
+            title="主题已切换",
+            content=f"应用主题已设置为「{theme_names.get(index, '未知')}」",
+            parent=self,
+            position=InfoBarPosition.TOP,
+            duration=3000
+        )
 
     def onSaveTaskThreads(self):
         """保存任务管理器线程数设置"""

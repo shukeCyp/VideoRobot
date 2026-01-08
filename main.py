@@ -106,9 +106,6 @@ class VideoRobotWindow(MSFluentWindow):
 
     def initWindow(self):
         """初始化窗口"""
-        # 设置固定为暗色主题
-        setTheme(Theme.DARK)
-
         self.resize(1200, 800)
         self.setWindowTitle("视频机器人")
 
@@ -335,10 +332,6 @@ def main():
     else:
         log.warning(f"图标文件不存在: {icon_path}")
 
-    # 设置暗夜模式
-    setTheme(Theme.DARK)
-    log.info("应用主题设置为暗夜模式")
-
     # 显示启动界面
     from app.view.splash_screen import SplashScreen
     splash = SplashScreen()
@@ -346,6 +339,20 @@ def main():
 
     # 先初始化数据库（避免主窗口加载数据时出错）
     init_database()
+
+    # 从配置加载并应用主题设置
+    from app.utils.config_manager import get_config_manager
+    config_manager = get_config_manager()
+    saved_theme = config_manager.get("app_theme", "dark")
+    if saved_theme == "dark":
+        setTheme(Theme.DARK)
+        log.info("应用主题设置为深色模式")
+    elif saved_theme == "light":
+        setTheme(Theme.LIGHT)
+        log.info("应用主题设置为浅色模式")
+    else:  # auto
+        setTheme(Theme.AUTO)
+        log.info("应用主题设置为跟随系统")
 
     # 创建主窗口（但不显示）
     window = VideoRobotWindow()

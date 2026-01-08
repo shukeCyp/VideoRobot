@@ -111,6 +111,10 @@ class AccountManageIntlView(QWidget):
         self.refreshBtn.clicked.connect(self.onRefresh)
         top.addWidget(self.refreshBtn)
 
+        self.batchCheckBtn = PushButton(FIF.CLOUD, "批量查询积分", self)
+        self.batchCheckBtn.clicked.connect(self.onBatchCheckPoints)
+        top.addWidget(self.batchCheckBtn)
+
         self.batchDeleteBtn = PushButton(FIF.DELETE, "批量删除", self)
         self.batchDeleteBtn.clicked.connect(self.onBatchDelete)
         top.addWidget(self.batchDeleteBtn)
@@ -457,6 +461,121 @@ class AccountManageIntlView(QWidget):
                 duration=2000,
                 position=InfoBarPosition.TOP
             )
+
+    def onBatchCheckPoints(self):
+        """批量查询积分"""
+        selected_ids = self._getSelectedAccountIds()
+
+        # 如果没有选中，则查询所有账号
+        if not selected_ids:
+            # 获取所有未删除的账号
+            accounts = list(JimengIntlAccount.get_all_accounts())
+            if not accounts:
+                InfoBar.warning(title="提示", content="没有可查询的账号", parent=self, position=InfoBarPosition.TOP)
+                return
+            selected_ids = [acc.id for acc in accounts]
+            query_all = True
+        else:
+            query_all = False
+
+        # 创建加载对话框
+        loading_dlg, status_label, progress_bar, progress_text = self._create_loading_dialog(
+            len(selected_ids), "正在批量查询积分"
+        )
+
+        # 使用线程进行异步处理
+        from PyQt5.QtCore import QThread, pyqtSignal
+
+        class BatchCheckThread(QThread):
+            progress = pyqtSignal(int, int, str)  # (current, total, status)
+            finished = pyqtSignal(int, int, int)  # (success, failed, disabled_count)
+
+            def __init__(self, account_ids):
+                super().__init__()
+                self.account_ids = account_ids
+
+            def run(self):
+                try:
+                    from app.client.jimeng_api_client import get_jimeng_api_client
+                    client = get_jimeng_api_client()
+                    success_count = 0
+                    failed_count = 0
+                    disabled_count = 0
+
+                    for idx, account_id in enumerate(self.account_ids):
+                        try:
+                            account = JimengIntlAccount.get_account_by_id(account_id)
+                            if not account:
+                                failed_count += 1
+                                continue
+
+                            self.progress.emit(idx + 1, len(self.account_ids),
+                                f"正在查询 ({idx + 1}/{len(self.account_ids)}): 账号 #{account_id}")
+
+                            # 查询积分
+                            total_credit = client.account_check(account.session_id)
+
+                            # 更新账号信息
+                            account.points = total_credit
+                            account.account_type = 1 if total_credit > 0 else 0
+
+                            # 如果有积分账号的积分小于4，自动禁用
+                            if account.account_type == 1 and total_credit < 4:
+                                account.disabled_at = datetime.now()
+                                disabled_count += 1
+                                log.warning(f"账号 {account_id} 积分不足({total_credit})，已自动禁用")
+
+                            account.save()
+                            success_count += 1
+
+                        except Exception as e:
+                            log.error(f"查询账号 {account_id} 积分失败: {e}")
+                            failed_count += 1
+
+                    self.finished.emit(success_count, failed_count, disabled_count)
+
+                except Exception as e:
+                    log.error(f"批量查询积分失败: {e}")
+                    self.finished.emit(0, len(self.account_ids), 0)
+
+        def on_progress(current, total, status):
+            status_label.setText(status)
+            progress_bar.setValue(current)
+            percentage = int((current / total * 100)) if total > 0 else 0
+            progress_text.setText(f"{percentage}%")
+
+        def on_finished(success, failed, disabled_count):
+            loading_dlg.close()
+            self.loadAccounts()
+
+            if success > 0:
+                message = f"成功查询 {success} 个账号"
+                if failed > 0:
+                    message += f"，{failed} 个失败"
+                if disabled_count > 0:
+                    message += f"，{disabled_count} 个因积分不足被禁用"
+                InfoBar.success(
+                    title="批量查询完成",
+                    content=message,
+                    parent=self,
+                    duration=4000,
+                    position=InfoBarPosition.TOP
+                )
+            else:
+                InfoBar.error(
+                    title="批量查询失败",
+                    content=f"所有 {failed} 个账号查询失败",
+                    parent=self,
+                    position=InfoBarPosition.TOP
+                )
+
+        self.batchCheckThread = BatchCheckThread(selected_ids)
+        self.batchCheckThread.progress.connect(on_progress)
+        self.batchCheckThread.finished.connect(on_finished)
+        self.batchCheckThread.start()
+
+        # 显示加载对话框
+        loading_dlg.exec()
 
     def onSelectAllChanged(self, state):
         """全选状态改变"""

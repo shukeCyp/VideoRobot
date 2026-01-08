@@ -89,15 +89,12 @@ class JimengIntlAccount(Model):
         if account:
             return account
 
-        # 如果没有积分账号，选择任意可用账号
+        # 如果没有有积分账号，选择无积分账号（无积分账号不需要检查积分）
         query = cls.select().where(
+            (cls.account_type == 0) &
             (cls.is_deleted == 0) &
             ((cls.disabled_at.is_null()) | (cls.disabled_at < today))
         )
-
-        # 如果需要检查积分，过滤满足积分要求的账号
-        if required_points > 0:
-            query = query.where(cls.points >= required_points)
 
         account = query.order_by(cls.created_at.asc()).first()
 

@@ -6,12 +6,40 @@ from app.utils.logger import log
 from datetime import datetime
 
 
-# 视频模型积分消耗映射表
-VIDEO_MODEL_POINTS_MAP = {
-    'jimeng-video-veo3.1': 20,
-    'jimeng-video-sora2': 20,
-    'jimeng-video-3.0': 10,
-}
+def get_video_points_cost(model: str, duration: str) -> int:
+    """
+    根据模型和时长计算视频生成的积分消耗
+
+    Args:
+        model: 视频模型名称
+        duration: 视频时长，格式如 "5s", "10s" 等
+
+    Returns:
+        int: 需要的积分数
+    """
+    model_lower = model.lower()
+
+    # Video3.0 特殊处理：根据时长计算
+    if 'jimeng-video-3.0' in model_lower or 'video-3.0' in model_lower:
+        try:
+            # 提取数字部分
+            duration_str = duration.lower().replace('s', '').strip()
+            duration_seconds = int(duration_str)
+
+            if duration_seconds == 5:
+                return 10
+            elif duration_seconds == 10:
+                return 20
+            else:
+                # 不支持的时长，默认10积分
+                log.warning(f"不支持的时长: {duration}，使用默认值 10")
+                return 10
+        except Exception as e:
+            log.warning(f"计算 Video3.0 积分时出错: {e}，使用默认值 10")
+            return 10
+
+    # 默认值
+    return 10
 
 
 class JimengIntlVideoTaskExecutor:
@@ -72,8 +100,8 @@ class JimengIntlVideoTaskExecutor:
             log.debug(f"任务 {task_id} 状态已更新为: 生成中")
 
             # 获取模型需要的积分
-            required_points = VIDEO_MODEL_POINTS_MAP.get(task.model.lower(), 10)
-            log.debug(f"任务 {task_id} 使用模型 {task.model}，需要 {required_points} 积分")
+            required_points = get_video_points_cost(task.model, task.duration)
+            log.debug(f"任务 {task_id} 使用模型 {task.model}，时长 {task.duration}，需要 {required_points} 积分")
 
             # 获取账号信息
             if not task.account_id:

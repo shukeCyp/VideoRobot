@@ -32,12 +32,9 @@ class AddVideoTaskIntlDialog(Dialog):
         model_label = BodyLabel("视频模型 *", content)
         model_layout.addWidget(model_label)
         self.model_combo = ComboBox(content)
-        self.model_combo.addItems([
-            'jimeng-video-veo3.1',
-            'jimeng-video-sora2',
-            'jimeng-video-3.0'
-        ])
+        self.model_combo.addItems(['jimeng-video-3.0'])
         self.model_combo.setCurrentText('jimeng-video-3.0')
+        self.model_combo.setEnabled(False)  # 禁用编辑
         self.model_combo.setFixedWidth(200)
         model_layout.addWidget(self.model_combo)
         model_layout.addStretch()
@@ -72,7 +69,7 @@ class AddVideoTaskIntlDialog(Dialog):
         duration_label = BodyLabel("时长 *", content)
         settings_layout.addWidget(duration_label)
         self.duration_combo = ComboBox(content)
-        self.duration_combo.addItems(['5s', '8s'])
+        self.duration_combo.addItems(['5s', '10s'])
         self.duration_combo.setCurrentText('5s')
         self.duration_combo.setFixedWidth(80)
         settings_layout.addWidget(self.duration_combo)
@@ -82,7 +79,7 @@ class AddVideoTaskIntlDialog(Dialog):
         settings_layout.addWidget(quality_label)
         self.quality_combo = ComboBox(content)
         self.quality_combo.addItems(['720p', '1080p'])
-        self.quality_combo.setCurrentText('1080p')
+        self.quality_combo.setCurrentText('720p')
         self.quality_combo.setFixedWidth(100)
         settings_layout.addWidget(self.quality_combo)
 
@@ -882,11 +879,9 @@ class VideoGenIntlView(QWidget):
                             prompt=t.get('prompt', ''),
                             account_id=None,
                             ratio=t.get('ratio', '16:9'),
-                            model=t.get('model', 'pixverse-v4.5'),
+                            model=t.get('model', 'jimeng-video-3.0'),
                             duration=t.get('duration', '5s'),
-                            quality=t.get('quality', '1080p'),
-                            motion=t.get('motion', 'auto'),
-                            negative_prompt=t.get('negative_prompt'),
+                            quality=t.get('quality', '720p'),
                             input_images=t.get('input_images', [])
                         )
                         ok += 1
@@ -999,12 +994,9 @@ class _VideoModelSettingsMixin:
 
         ml.addWidget(BodyLabel("模型:", owner))
         self.model_combo = ComboBox(owner)
-        self.model_combo.addItems([
-            'jimeng-video-veo3.1',
-            'jimeng-video-sora2',
-            'jimeng-video-3.0'
-        ])
+        self.model_combo.addItems(['jimeng-video-3.0'])
         self.model_combo.setCurrentText('jimeng-video-3.0')
+        self.model_combo.setEnabled(False)
         self.model_combo.setFixedWidth(180)
         ml.addWidget(self.model_combo)
 
@@ -1019,7 +1011,7 @@ class _VideoModelSettingsMixin:
         ml.addSpacing(10)
         ml.addWidget(BodyLabel("时长:", owner))
         self.duration_combo = ComboBox(owner)
-        self.duration_combo.addItems(['5s', '8s'])
+        self.duration_combo.addItems(['5s', '10s'])
         self.duration_combo.setCurrentText('5s')
         self.duration_combo.setFixedWidth(70)
         ml.addWidget(self.duration_combo)
@@ -1028,17 +1020,9 @@ class _VideoModelSettingsMixin:
         ml.addWidget(BodyLabel("质量:", owner))
         self.quality_combo = ComboBox(owner)
         self.quality_combo.addItems(['720p', '1080p'])
-        self.quality_combo.setCurrentText('1080p')
+        self.quality_combo.setCurrentText('720p')
         self.quality_combo.setFixedWidth(80)
         ml.addWidget(self.quality_combo)
-
-        ml.addSpacing(10)
-        ml.addWidget(BodyLabel("运动:", owner))
-        self.motion_combo = ComboBox(owner)
-        self.motion_combo.addItems(['auto', 'small', 'medium', 'large'])
-        self.motion_combo.setCurrentText('auto')
-        self.motion_combo.setFixedWidth(80)
-        ml.addWidget(self.motion_combo)
 
         ml.addStretch()
         return ml
@@ -1081,7 +1065,6 @@ class _TextPromptVideoImportIntlWidget(QWidget, _VideoModelSettingsMixin):
             'ratio': self.ratio_combo.currentText(),
             'duration': self.duration_combo.currentText(),
             'quality': self.quality_combo.currentText(),
-            'motion': self.motion_combo.currentText(),
             'input_images': []
         } for p in lines]
 
@@ -1153,7 +1136,6 @@ class _FolderVideoImportIntlWidget(QWidget, _VideoModelSettingsMixin):
                 'ratio': self.ratio_combo.currentText(),
                 'duration': self.duration_combo.currentText(),
                 'quality': self.quality_combo.currentText(),
-                'motion': self.motion_combo.currentText(),
                 'input_images': [p]
             })
         return tasks

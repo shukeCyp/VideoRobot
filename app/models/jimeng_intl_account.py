@@ -65,6 +65,10 @@ class JimengIntlAccount(Model):
         """
         获取一个可用的账号（排除今天禁用的和已删除的）
 
+        优先级：
+        1. 有积分账号 - 如果required_points > 0，则检查积分是否足够
+        2. 无积分账号 - 如果没有满足条件的有积分账号，则返回无积分账号
+
         Args:
             required_points: 需要的积分数，默认为0（不检查积分）
 
